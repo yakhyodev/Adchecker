@@ -56,7 +56,7 @@ def format_summary_message(title: str, report: dict, period_type: str) -> str:
     if channel_stats:
         lines.append("\n🏆 <b>Eng samarali kanallar (Top 5):</b>")
         for i, ch in enumerate(channel_stats[:5], start=1):
-            cpm_str = f" | CPM: {ch['cpm']:,.2f} so'm" if ch.get("cpm") else ""
+            cpm_str = f" | CPM: {ch['cpm']:,.2f} so'm" if ch.get("cpm") is not None else ""
             lines.append(
                 f"{i}. <b>{escape_tg_html(ch['title'])}</b>: {ch['total_views']:,} ko'rish "
                 f"({ch['ads_count']} ta post, o'rtacha: {ch['avg_views']:,}{cpm_str})"
@@ -157,8 +157,8 @@ async def callback_refresh_stats_view(callback: CallbackQuery) -> None:
             pass
 
 
-@router.message(F.text == "🔄 Statistikani yangilash")
-@router.message(Command("refresh"))
+@router.message(F.text == "🔄 Statistikani yangilash", flags={"requires_write": True})
+@router.message(Command("refresh"), flags={"requires_write": True})
 async def handle_manual_refresh(message: Message, state: FSMContext) -> None:
     await state.clear()
     wait_msg = await message.answer(
@@ -175,12 +175,18 @@ async def handle_manual_refresh(message: Message, state: FSMContext) -> None:
                 disc_res = await mon_service.run_incremental_scan()
                 stat_res = await mon_service.run_stats_update(update_type="recent")
 
+                heading = (
+                    "⚠️ <b>Yangilash qisman bajarildi.</b>"
+                    if stat_res.get("failed", 0)
+                    else "✅ <b>Statistikalar muvaffaqiyatli yangilandi!</b>"
+                )
                 text = (
-                    "✅ <b>Statistikalar muvaffaqiyatli yangilandi!</b>\n\n"
+                    f"{heading}\n\n"
                     f"📢 Tekshirilgan kanallar: <b>{disc_res.get('channels_scanned', 0)} ta</b>\n"
                     f"🎯 Yangi topilgan reklamalar: <b>{disc_res.get('new_ads_found', 0)} ta</b>\n"
                     f"🔄 Ko'rishlari yangilangan postlar: <b>{stat_res.get('updated', 0)} ta</b>\n"
-                    f"🗑 O'chirilgan postlar qayd etildi: <b>{stat_res.get('deleted', 0)} ta</b>"
+                    f"🗑 O'chirilgan postlar qayd etildi: <b>{stat_res.get('deleted', 0)} ta</b>\n"
+                    f"⚠️ Yangilash xatolari: <b>{stat_res.get('failed', 0)} ta</b>"
                 )
                 await wait_msg.edit_text(text, parse_mode="HTML")
         except Exception as e:

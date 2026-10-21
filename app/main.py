@@ -75,11 +75,11 @@ async def on_shutdown() -> None:
 
 async def main() -> None:
     setup_logging(settings.LOG_LEVEL)
+    settings.validate_runtime()
     setup_dispatcher()
 
-    await on_startup()
-
     try:
+        await on_startup()
         logger.info("Telegram Bot polling boshlandi...")
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:

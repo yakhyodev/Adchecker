@@ -248,6 +248,7 @@ class MonitoringService:
 
         updated_count = 0
         deleted_count = 0
+        failed_count = 0
 
         # Group ads by channel for efficiency
         channel_cache: Dict[int, Any] = {}
@@ -289,14 +290,17 @@ class MonitoringService:
 
             except TelegramFloodWaitException as fe:
                 logger.warning(f"Stats update to'xtatildi (FloodWait {fe.seconds}s)")
+                failed_count += 1
                 break
             except Exception as e:
                 logger.error(f"Ad {ad.id} statistikasini yangilashda xato: {e}")
+                failed_count += 1
                 continue
 
         return {
-            "status": "completed",
+            "status": "partial" if failed_count else "completed",
             "type": update_type,
             "updated": updated_count,
             "deleted": deleted_count,
+            "failed": failed_count,
         }

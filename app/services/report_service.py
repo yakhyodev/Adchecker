@@ -1,4 +1,5 @@
 from datetime import datetime, date, timezone, timedelta
+from decimal import Decimal
 from typing import Optional, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -68,12 +69,19 @@ class ReportService:
                     "views_count": 0,
                     "max_views": 0,
                     "total_reactions": 0,
-                    "cpm_price": float(ch.cpm_price) if ch.cpm_price else None,
+                    "cpm_price": float(ch.cpm_price) if ch.cpm_price is not None else None,
+                    "total_cost": Decimal("0"),
+                    "priced_ads_count": 0,
                     "last_ad_date": ad.posted_at,
                 }
 
             entry = channels_map[ch.id]
             entry["ads_count"] += 1
+            # Per-post cost overrides the channel's default placement price.
+            cost = ad.cost if ad.cost is not None else ch.cpm_price
+            if cost is not None:
+                entry["total_cost"] += Decimal(str(cost))
+                entry["priced_ads_count"] += 1
             if ad.views is not None:
                 entry["total_views"] += ad.views
                 entry["views_count"] += 1
@@ -81,7 +89,7 @@ class ReportService:
                     entry["max_views"] = ad.views
             if ad.reactions is not None:
                 entry["total_reactions"] += ad.reactions
-            if ad.posted_at > entry["last_ad_date"]:
+            if to_tashkent(ad.posted_at) > to_tashkent(entry["last_ad_date"]):
                 entry["last_ad_date"] = ad.posted_at
 
         channel_stats: List[Dict[str, Any]] = []
@@ -89,9 +97,8 @@ class ReportService:
             cnt = data["views_count"]
             avg = round(data["total_views"] / cnt) if cnt > 0 else 0
             cpm = None
-            if data["cpm_price"] and data["total_views"] > 0:
-                # CPM = (cost / views) * 1000
-                cpm = round((data["cpm_price"] / data["total_views"]) * 1000, 2)
+            if data["priced_ads_count"] == data["ads_count"] and data["total_views"] > 0:
+                cpm = float(round(data["total_cost"] / data["total_views"] * 1000, 2))
 
             channel_stats.append(
                 {
@@ -104,6 +111,10 @@ class ReportService:
                     "max_views": data["max_views"],
                     "total_reactions": data["total_reactions"],
                     "cpm_price": data["cpm_price"],
+                    "total_cost": (
+                        float(data["total_cost"])
+                        if data["priced_ads_count"] == data["ads_count"] else None
+                    ),
                     "cpm": cpm,
                     "last_ad_date": format_tashkent(data["last_ad_date"], "%Y-%m-%d"),
                 }
@@ -175,7 +186,7 @@ class ReportService:
         # Find latest updated at
         last_updated = None
         if ads:
-            last_updated = max(ads, key=lambda a: a.last_updated_at).last_updated_at
+            last_updated = max(ads, key=lambda a: to_tashkent(a.last_updated_at)).last_updated_at
 
         return {
             "start_dt": format_tashkent(start_utc),

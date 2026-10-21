@@ -251,7 +251,8 @@ class TelegramClientManager:
             raise TelegramFloodWaitException(e.seconds)
         except Exception as e:
             logger.error(f"Post statistikasini olishda xatolik (msg={message_id}): {e}")
-            return False, None, None, None
+            # A failed request does not prove the message was deleted.
+            raise TelegramClientError("Post statistikasini olib bo'lmadi") from e
 
 
 # Global client instance

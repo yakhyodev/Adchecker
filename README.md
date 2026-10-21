@@ -119,14 +119,26 @@ alembic upgrade head
 
 4. Dasturni ishga tushiring:
 ```bash
-python app/main.py
+python -m app.main
 ```
+
+Buyruqni loyiha ildiz papkasidan bajaring. Lokal PostgreSQL uchun `.env` dagi
+`DATABASE_URL` hosti `localhost`, Docker Compose uchun esa `postgres` bo'ladi.
+Namunaviy token/API qiymatlari yoki bo'sh `ADMIN_IDS` bilan dastur ishga tushmaydi;
+xabarda to'ldirilishi kerak bo'lgan sozlamalar nomlari ko'rsatiladi.
+
+`viewer` roli hisobotlar va ro'yxatlarni ko'rishi mumkin. Kanal qo'shish/o'chirish,
+narx va qidiruv kalitlarini o'zgartirish, monitoringni boshqarish hamda qo'lda
+skanerlash faqat `admin` va `superadmin` rollari uchun ochiq.
+Kanal to'xtatilganda avtomatik qidiruv va post statistikasi yangilanishi to'xtaydi.
+CPM jami reklama xarajati / jami ko'rishlar * 1000 sifatida hisoblanadi;
+postning alohida narxi bo'lmasa, kanalning bir reklama narxi olinadi.
 
 ---
 
 ## 🧪 TESTLARNI ISHGA TUSHIRISH
 
-Loyiha 100% testlar bilan ta'minlangan. Barcha 24 ta avtomatlashtirilgan testlarni ishga tushirish uchun:
+Avtomatlashtirilgan testlarni ishga tushirish uchun:
 
 ```bash
 pytest -v
@@ -142,6 +154,12 @@ Testlar quyidagilarni to'liq tekshiradi:
 - Telegram FloodWait xatoliklarini to'g'ri qayta ishlash.
 - Ruxsatsiz foydalanuvchilarni rad etish.
 - Snapshotlar orqali 24 soatlik o'sish dinamikasi.
+- Tarmoq xatosidan keyin reklamani saqlash va yangilashni qayta urinish.
+- Viewer uchun yozish amallarini bloklash va admin ruxsatlarini saqlash.
+- Har bir reklama xarajati bo'yicha CPM va pauzadagi kanallarni o'tkazib yuborish.
+
+Testlar izolyatsiyalangan SQLite bazasi va Telegram mocklaridan foydalanadi.
+Ular haqiqiy PostgreSQL va Telegram akkaunti bilan ulanish tekshiruvini almashtirmaydi.
 
 ---
 

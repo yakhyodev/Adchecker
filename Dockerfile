@@ -30,4 +30,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import app.core.config" || exit 1
 
 # Default command
-CMD ["python", "app/main.py"]
+CMD ["python", "-m", "app.main"]

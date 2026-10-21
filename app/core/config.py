@@ -38,6 +38,22 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    def validate_runtime(self) -> None:
+        """Reject example credentials before opening network connections."""
+        missing = []
+        if not self.BOT_TOKEN or self.BOT_TOKEN in (
+            "123456:TEST_BOT_TOKEN", "1234567890:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+        ):
+            missing.append("BOT_TOKEN")
+        if not self.ADMIN_IDS or any(user_id <= 0 for user_id in self.ADMIN_IDS):
+            missing.append("ADMIN_IDS")
+        if self.TELEGRAM_API_ID <= 0 or self.TELEGRAM_API_ID in (123456, 12345678):
+            missing.append("TELEGRAM_API_ID")
+        if not self.TELEGRAM_API_HASH or self.TELEGRAM_API_HASH == "0123456789abcdef0123456789abcdef":
+            missing.append("TELEGRAM_API_HASH")
+        if missing:
+            raise RuntimeError(".env sozlamalarini to'ldiring: " + ", ".join(missing))
+
     @field_validator("ADMIN_IDS", mode="before")
     @classmethod
     def parse_admin_ids(cls, v):

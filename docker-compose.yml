@@ -32,7 +32,7 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
     command: >
-      sh -c "alembic upgrade head && python app/main.py"
+      sh -c "alembic upgrade head && python -m app.main"
 
 volumes:
   pg_data:

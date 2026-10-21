@@ -47,7 +47,7 @@ async def callback_channels_menu(callback: CallbackQuery, state: FSMContext) -> 
     await callback.answer()
 
 
-@router.callback_query(F.data == "chan:add")
+@router.callback_query(F.data == "chan:add", flags={"requires_write": True})
 async def callback_add_channel_prompt(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AddChannelState.waiting_for_url)
     text = (
@@ -63,7 +63,7 @@ async def callback_add_channel_prompt(callback: CallbackQuery, state: FSMContext
     await callback.answer()
 
 
-@router.message(AddChannelState.waiting_for_url)
+@router.message(AddChannelState.waiting_for_url, flags={"requires_write": True})
 async def process_channel_input(message: Message, state: FSMContext) -> None:
     raw_text = message.text.strip()
     if raw_text in ("⬅️ Ortga", "🏠 Bosh menyu"):
@@ -184,7 +184,7 @@ async def callback_view_channel(callback: CallbackQuery) -> None:
         await callback.answer()
 
 
-@router.callback_query(F.data.startswith("chan:toggle:"))
+@router.callback_query(F.data.startswith("chan:toggle:"), flags={"requires_write": True})
 async def callback_toggle_channel(callback: CallbackQuery) -> None:
     channel_id = int(callback.data.split(":")[2])
     async with get_db_session() as session:
@@ -205,7 +205,7 @@ async def callback_toggle_channel(callback: CallbackQuery) -> None:
         )
 
 
-@router.callback_query(F.data.startswith("chan:delete_confirm:"))
+@router.callback_query(F.data.startswith("chan:delete_confirm:"), flags={"requires_write": True})
 async def callback_delete_confirm(callback: CallbackQuery) -> None:
     channel_id = int(callback.data.split(":")[2])
     text = (
@@ -220,7 +220,7 @@ async def callback_delete_confirm(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("chan:delete_do:"))
+@router.callback_query(F.data.startswith("chan:delete_do:"), flags={"requires_write": True})
 async def callback_delete_execute(callback: CallbackQuery) -> None:
     channel_id = int(callback.data.split(":")[2])
     async with get_db_session() as session:
@@ -237,7 +237,7 @@ async def callback_delete_execute(callback: CallbackQuery) -> None:
             await callback.answer("Xatolik: kanal topilmadi", show_alert=True)
 
 
-@router.callback_query(F.data.startswith("chan:scan_choice:"))
+@router.callback_query(F.data.startswith("chan:scan_choice:"), flags={"requires_write": True})
 async def callback_scan_choice(callback: CallbackQuery) -> None:
     channel_id = int(callback.data.split(":")[2])
     text = (
@@ -252,7 +252,7 @@ async def callback_scan_choice(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("chan:scan:"))
+@router.callback_query(F.data.startswith("chan:scan:"), flags={"requires_write": True})
 async def callback_execute_scan(callback: CallbackQuery) -> None:
     parts = callback.data.split(":")
     channel_id = int(parts[2])
@@ -303,7 +303,7 @@ async def callback_execute_scan(callback: CallbackQuery) -> None:
     asyncio.create_task(_async_scan())
 
 
-@router.callback_query(F.data.startswith("chan:price:"))
+@router.callback_query(F.data.startswith("chan:price:"), flags={"requires_write": True})
 async def callback_price_prompt(callback: CallbackQuery, state: FSMContext) -> None:
     channel_id = int(callback.data.split(":")[2])
     await state.set_state(ChannelPriceState.waiting_for_cpm)
@@ -318,7 +318,7 @@ async def callback_price_prompt(callback: CallbackQuery, state: FSMContext) -> N
     await callback.answer()
 
 
-@router.message(ChannelPriceState.waiting_for_cpm)
+@router.message(ChannelPriceState.waiting_for_cpm, flags={"requires_write": True})
 async def process_channel_price(message: Message, state: FSMContext) -> None:
     raw = message.text.strip().replace(" ", "").replace(",", ".")
     if raw in ("⬅️ Ortga", "🏠 Bosh menyu"):

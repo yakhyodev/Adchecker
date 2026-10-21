@@ -50,6 +50,16 @@ class AuthMiddleware(BaseMiddleware):
                     await event.answer(msg_text, show_alert=True)
                 return
 
+            handler_info = data.get("handler")
+            requires_write = getattr(handler_info, "flags", {}).get("requires_write", False)
+            if requires_write and admin.role not in (UserRole.ADMIN.value, UserRole.SUPERADMIN.value):
+                text = "⛔ Ushbu amalni faqat administrator bajara oladi."
+                if isinstance(event, CallbackQuery):
+                    await event.answer(text, show_alert=True)
+                else:
+                    await event.answer(text)
+                return
+
             # Update admin info if changed
             if admin.username != user.username or admin.full_name != user.full_name:
                 admin.username = user.username

@@ -156,6 +156,7 @@ class AdRepository:
             .where(
                 and_(
                     Channel.is_deleted == False,
+                    Channel.is_active == True,
                     Advertisement.is_deleted_from_tg == False,
                 )
             )

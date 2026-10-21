@@ -39,7 +39,7 @@ async def handle_settings_menu(message: Message, state: FSMContext) -> None:
     )
 
 
-@router.callback_query(F.data == "set:toggle_auto")
+@router.callback_query(F.data == "set:toggle_auto", flags={"requires_write": True})
 async def callback_toggle_auto(callback: CallbackQuery) -> None:
     async with get_db_session() as session:
         repo = SettingsRepository(session)
@@ -54,7 +54,7 @@ async def callback_toggle_auto(callback: CallbackQuery) -> None:
     )
 
 
-@router.callback_query(F.data == "set:keywords")
+@router.callback_query(F.data == "set:keywords", flags={"requires_write": True})
 async def callback_keywords(callback: CallbackQuery, state: FSMContext) -> None:
     async with get_db_session() as session:
         repo = SettingsRepository(session)
@@ -72,7 +72,7 @@ async def callback_keywords(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-@router.message(SettingsState.waiting_for_keyword)
+@router.message(SettingsState.waiting_for_keyword, flags={"requires_write": True})
 async def process_new_keywords(message: Message, state: FSMContext) -> None:
     raw = message.text.strip()
     if raw in ("⬅️ Ortga", "🏠 Bosh menyu"):

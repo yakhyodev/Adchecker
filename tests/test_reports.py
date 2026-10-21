@@ -92,9 +92,10 @@ async def test_report_service_calculations(db_session: AsyncSession):
     assert rep_7["total_channels"] == 1
     assert rep_7["top_ad"]["views"] == 20000
 
-    # CPM test for Channel A in rep_7: cost=300000, views=30000 -> CPM = 300000/30000 * 1000 = 10000.0
+    # Two placements at 300000 each: 600000 / 30000 * 1000 = 20000.
     ch_stat = rep_7["channel_stats"][0]
-    assert ch_stat["cpm"] == 10000.0
+    assert ch_stat["cpm"] == 20000.0
+    assert ch_stat["total_cost"] == 600000.0
 
     # 2. Test 30 days report (should contain ad1, ad2, ad3)
     rep_30 = await service.get_last_30_days_report()
@@ -106,6 +107,34 @@ async def test_report_service_calculations(db_session: AsyncSession):
     rep_365 = await service.get_last_365_days_report()
     assert rep_365["total_ads"] == 4
     assert rep_365["total_views"] == 43000
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "post_cost,channel_price,expected_cost,expected_cpm",
+    [(None, 500000, 1000000, 500000), (250000, 500000, 750000, 375000),
+     (0, 500000, 500000, 250000), (None, None, None, None), (0, 0, 0, 0)],
+)
+async def test_cpm_uses_each_placement_cost(
+    db_session, sample_channel, sample_ad, post_cost, channel_price, expected_cost, expected_cpm
+):
+    sample_channel.cpm_price = channel_price
+    sample_ad.views = 1000
+    sample_ad.cost = post_cost
+    db_session.add(Advertisement(
+        channel_id=sample_channel.id, message_id=106,
+        post_url="https://t.me/toshkent_yangiliklar/106",
+        posted_at=sample_ad.posted_at, views=1000,
+    ))
+    await db_session.flush()
+    report = await ReportService(db_session).get_last_7_days_report()
+    stats = report["channel_stats"][0]
+    assert stats["total_cost"] == expected_cost
+    assert stats["cpm"] == expected_cpm
+    if expected_cpm is not None:
+        from app.bot.handlers.statistics import format_summary_message
+        summary = format_summary_message("Hisobot", report, "week")
+        assert f"CPM: {expected_cpm:,.2f} so'm" in summary
 
 
 @pytest.mark.asyncio
