@@ -1,0 +1,40 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments
+.venv/
+env/
+venv/
+ENV/
+
+# Configuration & secrets
+.env
+*.session
+*.session-journal
+
+# Database & SQLite files
+*.db
+*.sqlite3
+
+# Logs & temporary data
+logs/
+data/
+*.log
+*.tmp
+
+# Excel generated test reports
+*.xlsx
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE / OS specific
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
