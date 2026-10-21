@@ -51,12 +51,13 @@ async def main() -> None:
         print(f"Telegramga tasdiqlash kodi so'rovi yuborilmoqda: {phone}")
         try:
             sent_code = await client.send_code_request(phone)
+            print("Kod yetkazish turi:", type(sent_code.type).__name__)
         except Exception as e:
             print(f"❌ Kod yuborishda xatolik: {e}")
             await client.disconnect()
             return
 
-        code = input("Telegram ilovangizga kelgan 5 xonali kodni kiriting: ").strip()
+        code = input("Telegram yuborgan tasdiqlash kodini kiriting: ").strip()
 
         try:
             await client.sign_in(phone=phone, code=code)
