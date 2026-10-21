@@ -68,15 +68,45 @@ DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/imkon_ads"
 ```
 
 ### 5-qadam: Telegram Akkauntga kirish (Telethon Sessiyasi)
-Telegram akkauntiga server terminalida bir marta xavfsiz autentifikatsiya qilinadi:
+`.env` faylida `TELEGRAM_API_ID` va `TELEGRAM_API_HASH` ni to'ldiring.
+Telegram akkauntiga server terminalida bir marta autentifikatsiya qilinadi:
 
 ```bash
-python scripts/telegram_login.py
+python -u scripts/telegram_login.py
 ```
-- Telefon raqamingizni kiriting (`+99890...`).
-- Telegram ilovangizga kelgan 5 xonali tasdiqlash kodini kiriting.
-- Agar 2FA (ikki bosqichli parol) yoqilgan bo'lsa, parolni kiriting.
-- Skript sessiyani avtomatik `.env` faylidagi `TELEGRAM_SESSION_STRING` parametriga saqlab beradi.
+
+- `1` — telefon orqali: raqam va Telegram yuborgan kodni kiriting. Skript kodning
+  yetkazish turini ko'rsatadi; noto'g'ri kodni uch martagacha qayta kiritish mumkin.
+- `2` — QR orqali: SSH terminalidagi QR-kodni telefonda **Telegram → Sozlamalar →
+  Qurilmalar → Qurilmani ulash** bo'limidan skanerlang va ulanishni tasdiqlang.
+  Terminalni kod qatorlari bo'linmaydigan darajada kengaytiring.
+- QR muddati tugasa, `y` yoki `Enter` bilan yangilang; `n` bilan bekor qiling.
+- Har ikki usulda 2FA yoqilgan bo'lsa, parol `getpass` orqali yashirin kiritiladi.
+  Interaktiv SSH terminali kerak; parolni yashirish imkoni bo'lmasa login to'xtaydi.
+- Muvaffaqiyatli kirgach, faqat `TELEGRAM_SESSION_STRING` mavjud `.env` fayliga
+  avtomatik yoziladi. Boshqa qiymatlar o'zgarmaydi. Sessiya, API hash va parol
+  terminalga chiqarilmaydi.
+
+**Oracle / Docker Compose:** loyiha papkasida `.env` mavjudligini tekshiring.
+Host faylini ulash sessiyani vaqtinchalik konteyner o'chirilganda ham saqlaydi:
+
+```bash
+git pull --ff-only
+docker compose build bot
+docker compose run --rm --no-deps \
+  -v "$PWD/.env:/app/.env" \
+  bot python -u scripts/telegram_login.py
+```
+
+Login tugagach, yangi `.env` qiymatini botga yuklang (`restart`ning o'zi yetmaydi):
+
+```bash
+docker compose up -d --no-deps --force-recreate bot
+docker compose logs --tail=60 bot
+```
+
+Logda `Telethon MTProto client avtorizatsiyadan o'tgan` xabarini tekshiring.
+QR tasdiqlangani Telegram bot va baza ham ishlayotganini tasdiqlamaydi.
 
 ---
 
@@ -157,6 +187,7 @@ Testlar quyidagilarni to'liq tekshiradi:
 - Tarmoq xatosidan keyin reklamani saqlash va yangilashni qayta urinish.
 - Viewer uchun yozish amallarini bloklash va admin ruxsatlarini saqlash.
 - Har bir reklama xarajati bo'yicha CPM va pauzadagi kanallarni o'tkazib yuborish.
+- Telefon/QR login, QR yangilanishi, yashirin 2FA va `.env` qiymatlarini saqlash.
 
 Testlar izolyatsiyalangan SQLite bazasi va Telegram mocklaridan foydalanadi.
 Ular haqiqiy PostgreSQL va Telegram akkaunti bilan ulanish tekshiruvini almashtirmaydi.
