@@ -28,6 +28,7 @@ async def setup_bot_commands(bot_instance: Bot) -> None:
         BotCommand(command="stats_month", description="🗓 Shu oydagi reklamalar"),
         BotCommand(command="custom_range", description="📆 Sana bo'yicha hisobot"),
         BotCommand(command="excel", description="📊 Excel hisobot yuklab olish"),
+        BotCommand(command="post", description="📋 Post va public forwardlar hisoboti"),
         BotCommand(command="cancel", description="⬅️ Qidiruv yoki amalni bekor qilish"),
         BotCommand(command="help", description="📖 Yordam va yo'riqnoma"),
     ]

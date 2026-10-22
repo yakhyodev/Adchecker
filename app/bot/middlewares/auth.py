@@ -25,7 +25,8 @@ class AuthMiddleware(BaseMiddleware):
             user = event.from_user
 
         if not user:
-            return await handler(event, data)
+            # Anonymous/channel-authored updates cannot establish an authorized user.
+            return
 
         user_id = user.id
 

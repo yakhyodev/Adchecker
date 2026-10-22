@@ -14,6 +14,7 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
         ],
         [
             KeyboardButton(text="📢 Kanallar"),
+            KeyboardButton(text="📋 Post hisoboti"),
         ],
     ]
     return ReplyKeyboardMarkup(

@@ -12,7 +12,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.methods import SendMessage, EditMessageText, SendDocument
 from aiogram.types import Chat, Message, Update, User, CallbackQuery
 
-from app.bot.handlers import get_main_router, search
+from app.bot.handlers import get_main_router, search, post_report
 from tests.test_live_search import example_report
 from app.core.timezone import TASHKENT_TZ
 
@@ -93,6 +93,42 @@ async def test_dispatcher_start_period_keyword_report_and_bulk_channel_navigatio
         assert await state.get_state() == search.SearchState.keywords.state
         await send("/cancel", 10)
         assert await state.get_state() is None
+
+        # Post reports navigate independently and do not turn links into keyword searches.
+        from app.services.post_report import PostReport, metrics
+        from tests.test_post_report import channel, post, LINK, NOW
+        post_result = PostReport(source=metrics(post(), channel()), checked_at=NOW,
+                                 public_shares=15, private_shares=213, forwards_complete=True)
+        collect = AsyncMock(return_value=post_result)
+        monkeypatch.setattr(post_report.service, "collect", collect)
+        await send("🆕 Oxirgi reklamalar", 11)
+        await send("📋 Post hisoboti", 12)
+        assert await state.get_state() == post_report.PostReportState.link.state
+        await send("invalid link", 13)
+        assert await state.get_state() == post_report.PostReportState.link.state
+        collect.assert_not_awaited()
+        await send(LINK, 14)
+        assert collect.await_count == 1
+        assert await state.get_state() is None
+        assert any(isinstance(call, EditMessageText) and "Private Shares: 213" in call.text
+                   for call in session.calls)
+        assert any(isinstance(call, SendDocument) and call.document.filename == "Post_hisoboti.xlsx"
+                   for call in session.calls)
+        await send(LINK, 15)  # A direct link also works from the main menu.
+        assert collect.await_count == 2
+        await send("/post " + LINK, 16)
+        assert collect.await_count == 3
+        await send("📋 Post hisoboti", 17)
+        await send("🗓 Shu oy", 18)  # Existing navigation wins over the pending post state.
+        assert await state.get_state() == search.SearchState.keywords.state
+        await send("📋 Post hisoboti", 19)
+        await send("📢 Kanallar", 20)
+        assert await state.get_state() is None
+        await send("📋 Post hisoboti", 21)
+        await send("/cancel", 22)
+        assert await state.get_state() is None
+        # Post reports have not queried or changed the saved-channel search service.
+        assert search_fn.await_count == 1 and load.await_count == 1
     finally:
         search.reports.clear()
         await dp.storage.close()

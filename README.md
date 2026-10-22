@@ -94,9 +94,51 @@ Kanallarni tekshirish natijasi beshtadan sahifalanadi. Bot API 429 cheklovida
 Telegram ko'rsatgan vaqt kutilib, yuborish uch martagacha qayta uriniladi;
 jarayon holati xabari xatosi qidiruv natijalarini bekor qilmaydi.
 
+## Post hisoboti
+
+Yangi **📋 Post hisoboti** bo'limi mavjud reklama qidiruvidan mustaqil ishlaydi.
+Bo'limga post havolasini yuboring yoki `/post https://t.me/imkonsavdomarkazi/5644`
+buyrug'idan foydalaning. Bosh menyuda post havolasining o'zini yuborish ham mumkin.
+Bo'lim faqat **imkonsavdomarkazi** kanalidagi postlar uchun ishlaydi; yangi environment
+sozlamasi talab qilinmaydi. `/c/` ko'rinishidagi havola ham shu kanalning Telegram ID
+qiymatiga tekshiriladi. Ulangan akkauntning boshqa yopiq kanallariga bu bo'limdan kirib bo'lmaydi.
+
+Statistika bot tokenidan emas, mavjud **Telethon akkaunti** orqali olinadi.
+Public shares statistikasi uchun shu akkaunt asosiy kanalda admin bo'lishi kerak;
+Telegram statistikaga kirishni ham ochgan bo'lishi kerak. Botning o'zini admin qilish
+akkauntga bu huquqni bermaydi.
+
+Hisobot Telegram ayni so'rovda bergan post, public forwardlar va hisoblagichlardan
+tuziladi. Public ro'yxatning barcha sahifalari olinadi; boshqa kanallarning tarixi
+skanerlanmaydi. Telegram qaytargan kanal/guruh postlari uchun havola, sana-vaqt,
+obunachi/a'zolar, ko'rishlar, reaksiyalar, ulashishlar va izohlar soni ko'rsatiladi.
+Telegram taqdim etmagan guruh/manzillar mustaqil qidirilmaydi. Storislar va shaxsiy
+chatlar ro'yxatga kiritilmaydi.
+
+**Private Shares** Telegram Desktop kabi `jami ulashishlar − Telegram public jami`
+orqali olinadi. Filtrlangan yoki hali to'liq yuklanmagan ro'yxat uzunligi bu hisobda
+ishlatilmaydi. Kerakli hisoblagich yo'q yoki qiymatlar bir-biriga zid bo'lsa, qiymat
+taxmin qilinmaydi. Public ro'yxat to'liq olinmasa, bot xabarida bu ko'rsatiladi.
+FloodWait, tarmoq/server muammosi yoki so'rovning 30 soniyalik kutish muddati tugasa,
+olingan ma'lumotlar saqlanib, qisman hisobot beriladi. Asosiy post hali olinmagan
+bo'lsa, texnik muammo alohida bildiriladi va "topilmadi" bilan almashtirilmaydi.
+Holat xabarini tahrirlashdagi muammo Excel yuborilishini to'xtatmaydi.
+Qisman natijada Excel fayli va public forwardlar varag'i nomida **qisman** belgisi
+bo'ladi; jadvaldan tashqari qo'shimcha yozuv yoki grafik qo'shilmaydi.
+
+Excel'da faqat **Asosiy post** va **Public forwardlar** jadvallari bor; grafiklar,
+izoh varaqlari va qo'shimcha yozuvlar yo'q. Sanalar Toshkent vaqtida, sonlar haqiqiy
+raqam sifatida saqlanadi. Yo'q qiymatlar **Ma'lumot topilmadi**, haqiqiy nol esa `0`.
+Ma'lumot yo'qligi yoki statistikaga ruxsat bo'lmasligi logga INFO sifatida tushadi;
+haqiqiy tarmoq/server muammolari bundan alohida ko'rsatiladi.
+
+Hisobot bazaga yozilmaydi, fon monitoringi yoki obunachilarni mustaqil kuzatish
+qo'shilmagan. `/cancel`, `/start` va bosh menyu davom etayotgan so'rovni to'xtatadi.
+
 ## Ishga tushirish
 
 Python 3.12+, PostgreSQL va Telegram akkaunti sessiyasi kerak.
+Post hisoboti uchun Telethon 1.45+ talab qilinadi (`requirements.txt` ichida ko'rsatilgan).
 
 ```powershell
 python -m venv .venv
@@ -150,6 +192,7 @@ o'zi yangi `.env` qiymatlarini yuklamaydi.
 | `/stats_month` | Shu oydagi reklamalar |
 | `/custom_range` | Ikki sana oralig'idagi reklamalar |
 | `/search`, `/excel` | Davrni tanlab yangi qidiruv |
+| `/post` | Post havolasi bo'yicha statistika va public forwardlar |
 | `/cancel` | Amalni yoki qidiruvni bekor qilish |
 | `/help` | Yo'riqnoma |
 

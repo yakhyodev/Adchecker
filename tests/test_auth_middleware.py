@@ -72,3 +72,12 @@ async def test_auth_middleware_allows_authorized_superadmin(monkeypatch, db_sess
     next_handler.assert_called_once()
     assert data.get("is_superadmin") is True
     assert data.get("admin_role") == UserRole.SUPERADMIN.value
+
+
+@pytest.mark.asyncio
+async def test_anonymous_update_cannot_bypass_user_authorization():
+    event = MagicMock(spec=Message)
+    event.from_user = None
+    handler = AsyncMock()
+    await AuthMiddleware()(handler, event, {})
+    handler.assert_not_awaited()
