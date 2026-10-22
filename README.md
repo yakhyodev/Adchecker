@@ -54,7 +54,9 @@ O'chirilgan kanal qayta qo'shilsa, o'sha ID li yozuv tiklanadi.
 - pastda qidirilgan kalitlar, davr va statistikani olish vaqti.
 
 Namunadagi hudud va aloqa qiymatlari `app/reports/channel_report_reference.json`
-faylida saqlanadi. Ular ro'yxatda saqlangan kanal username'i bilan moslanadi;
+faylida saqlanadi. Dastlab kanal username'i bilan moslanib, kanal qo'shish yoki
+tekshirish paytida Telegram ID ga bog'lab saqlanadi. Nom, username va havola
+o'zgarganda mavjud kanal yozuvi yangilanadi;
 namunada bo'lmagan kanalning hududi va aloqasi bo'sh qoladi. Bu ma'lumotnoma
 kanalni qidirish manbasi emas: postlar faqat bazada saqlangan **Telegram ID** orqali olinadi.
 Namunaning eski postlari va ko'rilishlari yangi natija sifatida ishlatilmaydi.
@@ -63,9 +65,12 @@ Namunaning eski postlari va ko'rilishlari yangi natija sifatida ishlatilmaydi.
 
 Matn, media izohi va yashirin havolalar katta-kichik harflarni ajratmasdan
 tekshiriladi. Bir media albomidagi mos xabarlar bitta reklama hisoblanadi.
-Qidiruv tanlangan sanadan orqaga o'tganda, oxirgi reklama rejimida esa birinchi
-mos post topilganda to'xtaydi. Xabarlar soniga sun'iy chegara qo'yilmagan.
-Reklama topilmagan kanalning katta tarixi ko'proq vaqt olishi mumkin.
+Avval Telegram serverining qidiruvidan nomzod postlar olinadi (har kalit uchun
+1000 tagacha), so'ng 500 tagacha so'nggi xabar orqali yashirin havola va
+indeksga tushmagan matnlar ham tekshiriladi. To'liq tasdiqlanmagan natija sariq
+rangda **Qisman tekshirildi** deb ko'rsatiladi. **To'liq tekshirish** tugmasi
+shu kanallarning tanlangan davrdagi tarixini cheklovsiz tekshiradi va natijani
+avvalgi hisobot bilan birlashtiradi. Katta tarixning to'liq tekshiruvi vaqt olishi mumkin.
 
 Username yoki kanal nomi almashsa ham saqlangan ID ishlatiladi. Sessiyada
 kanalning access hash'i bo'lmasa, akkaunt dialoglarining metama'lumotlari olinib,
@@ -80,8 +85,14 @@ administratorlar va mavjud sozlamalar uchun ishlatiladi.
 Natijalar Excelni qayta yuklash va sahifalash uchun faqat jarayon xotirasida
 30 daqiqa turadi (jami eng ko'pi 8 ta hisobot). Natija tugmalari faqat hisobotni
 olgan foydalanuvchi va chat uchun ishlaydi. Yangi qidiruv statistikani qaytadan oladi.
-Bir vaqtda bitta Telegram qidiruvi ishlaydi. **/cancel**, **/start** yoki bosh
-menyu orqali qidiruvni to'xtatish mumkin.
+Bir vaqtda ikkita Telegram qidiruvi ishlaydi; qolganlari bekor qilish mumkin
+bo'lgan navbatga qo'shiladi. **/cancel**, **/start** yoki bosh menyu qidiruv va
+kanal qo'shishni to'xtatadi. Eski jarayon to'xtagach yangi menyu boshlanadi.
+Kanal qo'shishda tugagan har bir yozuv alohida saqlanadi: bekor qilish oldin
+saqlangan kanallarni o'chirmaydi, kutayotgan va qolgan havolalarni to'xtatadi.
+Kanallarni tekshirish natijasi beshtadan sahifalanadi. Bot API 429 cheklovida
+Telegram ko'rsatgan vaqt kutilib, yuborish uch martagacha qayta uriniladi;
+jarayon holati xabari xatosi qidiruv natijalarini bekor qilmaydi.
 
 ## Ishga tushirish
 

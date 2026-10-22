@@ -13,6 +13,7 @@ from app.telegram_client.client import (
     TelegramFloodWaitException,
 )
 from app.core.logging import logger
+from app.services.channel_metadata import preserve_metadata
 
 
 @dataclass
@@ -49,7 +50,7 @@ class ChannelService:
         # Check existing in DB
         existing = await self.channel_repo.get_by_tg_id(tg_id)
         if existing and not existing.is_deleted:
-            # Already exists and active
+            await self.refresh_metadata(existing, info)
             return existing, False
 
         try:
@@ -59,12 +60,23 @@ class ChannelService:
                     telegram_channel_id=tg_id, title=info["title"],
                     username=info["username"], url=info["url"],
                 )
+                await self.refresh_metadata(channel, info)
         except IntegrityError:
             channel = await self.channel_repo.get_by_tg_id(tg_id)
             if channel is None:
                 raise
+            await self.refresh_metadata(channel, info)
             return channel, False
         return channel, True
+
+    async def refresh_metadata(self, channel: Channel, info: dict) -> None:
+        if info["telegram_channel_id"] != channel.telegram_channel_id:
+            raise ValueError("Telegram channel ID mismatch")
+        await preserve_metadata(self.session, channel.telegram_channel_id, channel.username, info["username"])
+        channel.title = info["title"]
+        channel.username = info["username"]
+        channel.url = info["url"]
+        await self.session.flush()
 
     async def add_channels(self, raw: str) -> list[ChannelAddResult]:
         inputs = split_channel_inputs(raw)
@@ -73,6 +85,9 @@ class ChannelService:
             try:
                 async with self.session.begin_nested():
                     channel, added = await self.add_channel(item)
+                # A completed item survives cancellation of a later network request;
+                # do not hold the directory transaction open for the entire batch.
+                await self.session.commit()
                 results.append(ChannelAddResult(item, "added" if added else "duplicate",
                                                channel.title, channel.telegram_channel_id))
             except TelegramFloodWaitException as exc:
@@ -120,6 +135,7 @@ class ChannelService:
 
         try:
             info = await self.tg_client.resolve_channel(str(channel.telegram_channel_id))
+            await self.refresh_metadata(channel, info)
             return {
                 "status": "ok",
                 "title": info["title"],

@@ -46,7 +46,15 @@ def manager(messages, peers=None):
     client = MagicMock()
     client.get_entity = AsyncMock(side_effect=lambda marked: NS(
         id=int(str(marked).removeprefix("-100")), username="new_name", title="New title", broadcast=True))
-    client.iter_messages.side_effect = lambda peer, **kw: stream(messages.get(peer.id, []))
+    def iterate(peer, **kw):
+        rows = messages.get(peer.id, [])
+        query = kw.get("search")
+        if query:
+            # Model a text index that does not return hidden text-link URLs.
+            rows = [msg for msg in rows if isinstance(msg, Exception) or query.casefold() in msg.message.casefold()]
+        limit = kw.get("limit")
+        return stream(rows[:limit] if limit is not None else rows)
+    client.iter_messages.side_effect = iterate
     client.iter_dialogs.side_effect = lambda **kw: stream(peers or [])
     return NS(client=client, is_authorized=AsyncMock(return_value=True))
 
@@ -91,7 +99,7 @@ async def test_empty_entity_cache_resolves_only_saved_ids_from_dialog_metadata()
     mgr.client.get_entity.side_effect = ValueError("Missing access hash")
     report = await LiveSearchService(mgr).search([channel()], custom_request())
     assert report.channels[0].ads[0].url == "https://t.me/c/111/1"
-    assert mgr.client.iter_messages.call_count == 1
+    assert mgr.client.iter_messages.call_count == 2
     assert mgr.client.iter_messages.call_args.args[0].id == 111
 
 
@@ -105,7 +113,7 @@ async def test_date_bounds_hidden_urls_albums_and_multiple_matches():
         post(2, at=datetime(2026, 10, 5, 18, 59, 59, tzinfo=timezone.utc))]})
     report = await LiveSearchService(mgr).search([channel()], req)
     assert [ad.message_id for ad in report.channels[0].ads] == [5, 3]
-    assert mgr.client.iter_messages.call_args.kwargs["limit"] is None
+    assert mgr.client.iter_messages.call_args.kwargs["limit"] == 501
     assert mgr.client.iter_messages.call_args.kwargs["offset_date"] > req.end
 
 
@@ -185,7 +193,7 @@ async def test_bulk_flood_saves_completed_items_without_hammering_rest(db_sessio
 
 @pytest.mark.asyncio
 async def test_channel_health_check_uses_id_instead_of_old_username(db_session, sample_channel):
-    tg = NS(resolve_channel=AsyncMock(return_value=dict(title="New title", username="new_name",
+    tg = NS(resolve_channel=AsyncMock(return_value=dict(title="New title", username="new_name", url="https://t.me/new_name",
                                                        telegram_channel_id=sample_channel.telegram_channel_id)))
     result = await ChannelService(db_session, tg).check_channel_health(sample_channel.id)
     assert result["status"] == "ok"

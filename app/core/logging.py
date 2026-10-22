@@ -1,25 +1,42 @@
 import logging
 import sys
 import re
-from typing import Optional
+from app.core.config import settings
+
+
+def redact_sensitive(text: str) -> str:
+    # Exact configured values also cover session/token formats outside our patterns.
+    for value in (settings.BOT_TOKEN, settings.TELEGRAM_API_HASH,
+                  settings.TELEGRAM_SESSION_STRING, settings.DATABASE_URL):
+        if value and len(value) >= 8:
+            text = text.replace(value, "[REDACTED_SECRET]")
+    for pattern in SensitiveFilter.SENSITIVE_PATTERNS:
+        text = pattern.sub("[REDACTED_SECRET]", text)
+    return text
 
 
 class SensitiveFilter(logging.Filter):
     """Filters out sensitive information from logs such as bot tokens, api hash, session strings."""
 
     SENSITIVE_PATTERNS = [
-        re.compile(r"(bot[0-9]{8,12}:[a-zA-Z0-9_-]{35})", re.IGNORECASE),
+        re.compile(r"(?:bot)?[0-9]{6,16}:[a-zA-Z0-9_-]{20,}", re.IGNORECASE),
         re.compile(r"([0-9a-f]{32})", re.IGNORECASE),  # API HASH length
-        re.compile(r"(1[A-Za-z0-9_-]{100,})"),  # Telethon session strings
+        re.compile(r"1[A-Za-z0-9_=-]{100,}"),  # Telethon session strings
     ]
 
     def filter(self, record: logging.LogRecord) -> bool:
-        if isinstance(record.msg, str):
-            msg = record.msg
-            for pattern in self.SENSITIVE_PATTERNS:
-                msg = pattern.sub("[REDACTED_SECRET]", msg)
-            record.msg = msg
+        record.msg = redact_sensitive(record.getMessage())
+        record.args = ()
         return True
+
+
+class SensitiveFormatter(logging.Formatter):
+    def formatException(self, exc_info) -> str:
+        return redact_sensitive(super().formatException(exc_info))
+
+    def format(self, record) -> str:
+        # Also protect cached exception text and stack_info produced by other handlers.
+        return redact_sensitive(super().format(record))
 
 
 def setup_logging(level: str = "INFO") -> None:
@@ -38,7 +55,7 @@ def setup_logging(level: str = "INFO") -> None:
 
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(numeric_level)
-    formatter = logging.Formatter(fmt=log_format, datefmt=date_format)
+    formatter = SensitiveFormatter(fmt=log_format, datefmt=date_format)
     console_handler.setFormatter(formatter)
     console_handler.addFilter(SensitiveFilter())
 

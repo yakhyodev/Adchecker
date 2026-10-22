@@ -1,11 +1,17 @@
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery
+import asyncio
+import time
+import uuid
+from collections import OrderedDict
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 
 from app.database.session import get_db_session
 from app.services.channel_service import ChannelService
 from app.bot.handlers.search import cancel_search, periods_keyboard, ask_keywords
+from app.bot.operations import begin_operation, finish_operation
 from app.bot.states.forms import AddChannelState, ChannelPriceState
 from app.bot.keyboards.inline import (
     get_channels_menu_keyboard,
@@ -19,12 +25,13 @@ from app.telegram_client.client import ChannelNotFoundError, ChannelAccessDenied
 from app.core.logging import logger
 
 router = Router(name="channels_router")
+health_reports = OrderedDict()
 
 
 @router.message(F.text == "📢 Kanallar")
 @router.message(Command("channels"))
 async def handle_channels_menu(message: Message, state: FSMContext) -> None:
-    cancel_search(message.chat.id, message.from_user.id)
+    await cancel_search(message.chat.id, message.from_user.id)
     await state.clear()
     text = (
         "📢 <b>KANALLARNI BOSHQARISH</b>\n\n"
@@ -36,7 +43,7 @@ async def handle_channels_menu(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "chan:menu")
 async def callback_channels_menu(callback: CallbackQuery, state: FSMContext) -> None:
-    cancel_search(callback.message.chat.id, callback.from_user.id)
+    await cancel_search(callback.message.chat.id, callback.from_user.id)
     await state.clear()
     text = (
         "📢 <b>KANALLARNI BOSHQARISH</b>\n\n"
@@ -48,7 +55,7 @@ async def callback_channels_menu(callback: CallbackQuery, state: FSMContext) -> 
 
 @router.callback_query(F.data == "chan:add", flags={"requires_write": True})
 async def callback_add_channel_prompt(callback: CallbackQuery, state: FSMContext) -> None:
-    cancel_search(callback.message.chat.id, callback.from_user.id)
+    await cancel_search(callback.message.chat.id, callback.from_user.id)
     await state.clear()
     await state.set_state(AddChannelState.waiting_for_url)
     text = (
@@ -78,9 +85,14 @@ async def process_channel_input(message: Message, state: FSMContext) -> None:
         await message.answer("Amal bekor qilindi.", reply_markup=get_main_menu_keyboard())
         return
 
-    wait_msg = await message.answer("⏳ Yuborilgan kanallar tekshirilib, Telegram ID bilan saqlanmoqda...")
-
+    owner = (message.chat.id, message.from_user.id)
+    task = await begin_operation(*owner)
+    operation_id = uuid.uuid4().hex
+    wait_msg = None
     try:
+        await state.set_state(AddChannelState.running)
+        await state.update_data(operation_id=operation_id)
+        wait_msg = await message.answer("⏳ Yuborilgan kanallar tekshirilib, Telegram ID bilan saqlanmoqda...\nTo'xtatish: /cancel")
         async with get_db_session() as session:
             service = ChannelService(session)
             results = await service.add_channels(raw_text)
@@ -102,8 +114,12 @@ async def process_channel_input(message: Message, state: FSMContext) -> None:
         if chunk:
             await message.answer(chunk)
 
-        await state.clear()
-        await message.answer("Kerakli amalni tanlang:", reply_markup=get_main_menu_keyboard())
+    except asyncio.CancelledError:
+        if wait_msg:
+            try:
+                await wait_msg.edit_text("Kanal qo'shish bekor qilindi. Avval saqlangan kanallar ro'yxatda qoldi.")
+            except TelegramBadRequest:
+                pass
 
     except ChannelNotFoundError:
         await wait_msg.edit_text(
@@ -120,10 +136,21 @@ async def process_channel_input(message: Message, state: FSMContext) -> None:
         )
     except Exception as e:
         logger.error(f"Kanal qo'shishda xatolik: {e}")
-        await wait_msg.edit_text(
+        await message.answer(
             f"❌ Xatolik yuz berdi: {escape_tg_html(str(e))}",
             parse_mode="HTML",
         )
+    finally:
+        if finish_operation(owner, task):
+            data = await state.get_data()
+            if data.get("operation_id") == operation_id:
+                await state.clear()
+                await message.answer("Kerakli amalni tanlang:", reply_markup=get_main_menu_keyboard())
+
+
+@router.message(AddChannelState.running)
+async def while_adding_channels(message: Message) -> None:
+    await message.answer("Kanallar qo'shilmoqda. To'xtatish: /cancel")
 
 
 @router.callback_query(F.data.startswith("chan:list:"))
@@ -237,7 +264,7 @@ async def callback_delete_execute(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("chan:scan_choice:"), flags={"requires_write": True})
 async def callback_scan_choice(callback: CallbackQuery, state: FSMContext) -> None:
     channel_id = int(callback.data.split(":")[2])
-    cancel_search(callback.message.chat.id, callback.from_user.id)
+    await cancel_search(callback.message.chat.id, callback.from_user.id)
     await state.clear()
     await state.update_data(channel_id=channel_id)
     text = (
@@ -258,7 +285,7 @@ async def callback_execute_scan(callback: CallbackQuery, state: FSMContext) -> N
     channel_id = int(parts[2])
     days = int(parts[3])
 
-    cancel_search(callback.message.chat.id, callback.from_user.id)
+    await cancel_search(callback.message.chat.id, callback.from_user.id)
     await state.clear()
     await state.update_data(channel_id=channel_id, mode={7: "week", 30: "month", 365: "year"}.get(days, "latest"))
     await callback.answer()
@@ -330,16 +357,46 @@ async def callback_check_all_channels(callback: CallbackQuery) -> None:
         for ch in channels:
             health = await service.check_channel_health(ch.id)
             if health["status"] == "ok":
-                report_lines.append(f"🟢 <b>{escape_tg_html(ch.title)}</b> — Aloqa yaxshi")
+                report_lines.append(f"🟢 <b>{escape_tg_html(ch.title[:128])}</b> — Aloqa yaxshi")
             else:
-                report_lines.append(f"🔴 <b>{escape_tg_html(ch.title)}</b> — {health.get('message', 'Xato')}")
+                report_lines.append(f"🔴 <b>{escape_tg_html(ch.title[:128])}</b> — {escape_tg_html(str(health.get('message', 'Xato'))[:240])}")
 
-        res_text = (
-            f"🔍 <b>KANALLARNI TEKSHIRISH NATIJALARI</b> (Jami: {len(channels)}):\n\n"
-            + "\n".join(report_lines)
-        )
-        await callback.message.edit_text(
-            res_text,
-            parse_mode="HTML",
-            reply_markup=get_channels_menu_keyboard(),
-        )
+    token = uuid.uuid4().hex[:12]
+    now = time.monotonic()
+    for key, (_, expires, _) in list(health_reports.items()):
+        if expires <= now:
+            health_reports.pop(key)
+    health_reports[token] = ((callback.message.chat.id, callback.from_user.id), now + 1800, report_lines)
+    while len(health_reports) > 8:
+        health_reports.popitem(last=False)
+    text, markup = render_health_page(report_lines, token, 1)
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+
+
+def render_health_page(lines, token, page):
+    pages = max(1, (len(lines) + 4) // 5)
+    page = max(1, min(page, pages))
+    text = f"🔍 <b>KANALLARNI TEKSHIRISH NATIJALARI</b> (Jami: {len(lines)})\n\n"
+    text += "\n\n".join(lines[(page - 1) * 5:page * 5]) or "Faol kanal yo'q."
+    nav = []
+    if page > 1:
+        nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"health:page:{token}:{page - 1}"))
+    nav.append(InlineKeyboardButton(text=f"{page}/{pages}", callback_data="noop"))
+    if page < pages:
+        nav.append(InlineKeyboardButton(text="➡️", callback_data=f"health:page:{token}:{page + 1}"))
+    return text, InlineKeyboardMarkup(inline_keyboard=[nav, [InlineKeyboardButton(text="📢 Kanallar", callback_data="chan:menu")]])
+
+
+@router.callback_query(F.data.startswith("health:page:"))
+async def callback_health_page(callback: CallbackQuery) -> None:
+    parts = callback.data.split(":")
+    entry = health_reports.get(parts[2])
+    if not entry or entry[1] <= time.monotonic() or entry[0] != (callback.message.chat.id, callback.from_user.id):
+        await callback.answer("Natija muddati tugagan yoki bu sizning hisobotingiz emas.", show_alert=True)
+        return
+    await callback.answer()
+    text, markup = render_health_page(entry[2], parts[2], int(parts[3]))
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+    except TelegramBadRequest:
+        pass

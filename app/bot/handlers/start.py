@@ -12,7 +12,7 @@ router = Router(name="start_router")
 
 @router.message(CommandStart())
 async def handle_start(message: Message, state: FSMContext) -> None:
-    cancel_search(message.chat.id, message.from_user.id)
+    await cancel_search(message.chat.id, message.from_user.id)
     await state.clear()
     first_name = escape_tg_html(message.from_user.first_name if message.from_user else "Foydalanuvchi")
     text = (
@@ -46,7 +46,7 @@ async def handle_help(message: Message) -> None:
 @router.message(F.text.in_(["🏠 Bosh menyu", "⬅️ Ortga"]))
 @router.message(Command("cancel"))
 async def handle_home_text(message: Message, state: FSMContext) -> None:
-    cancel_search(message.chat.id, message.from_user.id)
+    await cancel_search(message.chat.id, message.from_user.id)
     await state.clear()
     await message.answer(
         "🏠 Asosiy menyudasiz:",
@@ -56,7 +56,7 @@ async def handle_home_text(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "nav:home")
 async def handle_home_callback(callback: CallbackQuery, state: FSMContext) -> None:
-    cancel_search(callback.message.chat.id, callback.from_user.id)
+    await cancel_search(callback.message.chat.id, callback.from_user.id)
     await state.clear()
     await callback.message.delete()
     await callback.message.answer(

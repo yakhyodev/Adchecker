@@ -5,6 +5,7 @@ from aiogram.types import BotCommand, BotCommandScopeDefault
 
 from app.core.config import settings
 from app.bot.middlewares.auth import AuthMiddleware
+from app.bot.middlewares.retry import RetryAfterMiddleware
 from app.bot.handlers import get_main_router
 from app.core.logging import logger
 
@@ -12,6 +13,7 @@ bot = Bot(
     token=settings.BOT_TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML),
 )
+bot.session.middleware(RetryAfterMiddleware())
 
 dp = Dispatcher()
 

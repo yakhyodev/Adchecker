@@ -4,16 +4,20 @@ import asyncio
 import time
 import uuid
 from collections import OrderedDict
+from dataclasses import replace
 from datetime import date, datetime
 
 from aiogram import F, Router
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramRetryAfter
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app.bot.keyboards.reply import get_cancel_keyboard, get_main_menu_keyboard
+from app.bot.operations import (
+    running, cancel_operation as cancel_search, begin_operation, finish_operation,
+)
 from app.core.logging import logger
 from app.core.security import escape_tg_html
 from app.core.timezone import format_tashkent, get_tashkent_now
@@ -23,8 +27,7 @@ from app.services.live_search import LiveSearchService, SearchRequest, SearchUna
 
 router = Router(name="live_search_router")
 service = LiveSearchService()
-search_lock = asyncio.Lock()
-running: dict[tuple[int, int], asyncio.Task] = {}
+search_slots = asyncio.Semaphore(2)
 # Reports live only in bounded process memory, expire after 30 minutes, and are owner-scoped.
 reports: OrderedDict = OrderedDict()
 
@@ -34,12 +37,6 @@ class SearchState(StatesGroup):
     end_date = State()
     keywords = State()
     running = State()
-
-
-def cancel_search(chat_id: int, user_id: int) -> None:
-    task = running.get((chat_id, user_id))
-    if task and task is not asyncio.current_task():
-        task.cancel()
 
 
 def periods_keyboard(channel_id: int | None = None) -> InlineKeyboardMarkup:
@@ -54,7 +51,7 @@ def periods_keyboard(channel_id: int | None = None) -> InlineKeyboardMarkup:
 
 async def begin_search(message: Message, state: FSMContext, mode: str,
                        channel_id: int | None = None) -> None:
-    cancel_search(message.chat.id, message.from_user.id)
+    await cancel_search(message.chat.id, message.from_user.id)
     await state.clear()
     await state.update_data(mode=mode, channel_id=channel_id)
     if mode == "custom":
@@ -77,7 +74,7 @@ async def ask_keywords(message: Message, state: FSMContext) -> None:
 @router.message(Command("search", "excel"))
 @router.message(F.text == "📊 Excel hisobot")
 async def search_menu(message: Message, state: FSMContext) -> None:
-    cancel_search(message.chat.id, message.from_user.id)
+    await cancel_search(message.chat.id, message.from_user.id)
     await state.clear()
     await message.answer("Qaysi davrdagi reklamalarni qidiramiz?", reply_markup=periods_keyboard())
 
@@ -116,7 +113,7 @@ async def select_period(callback: CallbackQuery, state: FSMContext) -> None:
         return
     await callback.answer()
     # Callback messages are authored by the bot, so cancellation uses the human ID.
-    cancel_search(callback.message.chat.id, callback.from_user.id)
+    await cancel_search(callback.message.chat.id, callback.from_user.id)
     await state.clear()
     await state.update_data(mode=mode, channel_id=int(parts[3]) if len(parts) > 3 else None)
     if mode == "custom":
@@ -210,9 +207,13 @@ def render_page(report, token: str, page: int = 1):
     nav.append(InlineKeyboardButton(text=f"{page}/{pages}", callback_data="noop"))
     if page < pages:
         nav.append(InlineKeyboardButton(text="➡️", callback_data=f"search:page:{token}:{page + 1}"))
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[nav,
+    actions = [nav,
         [InlineKeyboardButton(text="📊 Excel yuklash", callback_data=f"search:excel:{token}")],
-        [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="nav:home")]])
+    ]
+    if any(result.partial for result in report.channels):
+        actions.append([InlineKeyboardButton(text="🔎 To'liq tekshirish", callback_data=f"search:full:{token}")])
+    actions.append([InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="nav:home")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=actions)
     return "\n\n".join(lines), keyboard
 
 
@@ -233,24 +234,31 @@ async def execute_search(message: Message, state: FSMContext) -> None:
     except ValueError as exc:
         await message.answer(escape_tg_html(str(exc)))
         return
-    if search_lock.locked():
-        await message.answer("Hozir boshqa qidiruv ishlayapti. Tugagach kalit so'zni qayta yuboring.")
-        return
-    owner = (message.chat.id, message.from_user.id)
-    task = asyncio.current_task()
-    running[owner] = task
+    await run_search(message, state, request, data.get("channel_id"))
+
+
+async def run_search(message, state, request, channel_id=None, user_id=None, target_ids=None, previous_report=None):
+    owner = (message.chat.id, user_id or message.from_user.id)
+    task = await begin_operation(*owner)
+    operation_id = uuid.uuid4().hex
     wait = None
     try:
-        async with search_lock:
-            await state.set_state(SearchState.running)
+        await state.set_state(SearchState.running)
+        await state.update_data(operation_id=operation_id)
+        if search_slots.locked():
+            await message.answer("⏳ Qidiruv navbatga qo'shildi. To'xtatish: /cancel")
+        async with search_slots:
             async with get_db_session() as session:
-                channels = await load_search_channels(session, data.get("channel_id"))
+                channels = await load_search_channels(session, channel_id)
+            active_ids = {ch.id for ch in channels}
+            if target_ids is not None:
+                channels = [ch for ch in channels if ch.id in target_ids]
             if not channels:
                 await message.answer("Qidiruv uchun faol kanal yo'q. 📢 Kanallar bo'limida kanal qo'shing yoki faollashtiring.",
                                      reply_markup=get_main_menu_keyboard())
                 return
             wait = await message.answer("⏳ Saqlangan kanallardan bevosita qidirilmoqda.\n"
-                "Matn, izoh va havolalar tekshiriladi. Katta tarix vaqt olishi mumkin.\n"
+                "Matn, izoh va havolalar tekshiriladi.\n"
                 "To'xtatish: /cancel", reply_markup=get_cancel_keyboard())
             last_update = 0.0
             async def progress(done, total, title, scanned):
@@ -261,9 +269,13 @@ async def execute_search(message: Message, state: FSMContext) -> None:
                 try:
                     await wait.edit_text(f"⏳ Tekshirilgan kanallar: {done}/{total}\n"
                         f"Kanal: {escape_tg_html(title[:150])}\nKo'rilgan xabarlar: {scanned}\nTo'xtatish: /cancel")
-                except TelegramBadRequest:
+                except (TelegramBadRequest, TelegramNetworkError, TelegramRetryAfter):
                     pass
             report = await service.search(channels, request, progress)
+            if previous_report is not None:
+                updated = {result.channel.id: result for result in report.channels}
+                report.channels = [updated.get(result.channel.id, result) for result in previous_report.channels
+                                   if result.channel.id in active_ids]
             token = cache_report(owner, report)
             text, keyboard = render_page(report, token)
             await wait.edit_text(text, reply_markup=keyboard, disable_web_page_preview=True)
@@ -280,16 +292,17 @@ async def execute_search(message: Message, state: FSMContext) -> None:
         logger.warning("Bevosita qidiruv bajarilmadi: %s", type(exc).__name__)
         await message.answer("Qidiruv yoki hisobotni yuborish tugamadi. Natija chiqqan bo'lsa, Excel yuklashni qayta bosing.")
     finally:
-        if running.get(owner) is task:
-            running.pop(owner, None)
-            if await state.get_state() == SearchState.running.state:
+        if finish_operation(owner, task):
+            data = await state.get_data()
+            if data.get("operation_id") == operation_id:
                 await state.clear()
                 await message.answer("Asosiy menyu:", reply_markup=get_main_menu_keyboard())
 
 
 @router.callback_query(F.data.startswith("search:page:"))
 @router.callback_query(F.data.startswith("search:excel:"))
-async def cached_result(callback: CallbackQuery) -> None:
+@router.callback_query(F.data.startswith("search:full:"))
+async def cached_result(callback: CallbackQuery, state: FSMContext = None) -> None:
     parts = callback.data.split(":")
     token = parts[2]
     entry = reports.get(token)
@@ -300,7 +313,13 @@ async def cached_result(callback: CallbackQuery) -> None:
         return
     await callback.answer()
     report = entry[2]
-    if parts[1] == "excel":
+    if parts[1] == "full":
+        target_ids = {result.channel.id for result in report.channels if result.partial}
+        if not target_ids:
+            return
+        await run_search(callback.message, state, replace(report.request, full_history=True),
+                         user_id=callback.from_user.id, target_ids=target_ids, previous_report=report)
+    elif parts[1] == "excel":
         await send_excel(callback.message, report)
     else:
         try:

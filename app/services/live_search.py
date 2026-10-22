@@ -1,7 +1,6 @@
-"""On-demand Telegram searches. Only the channel list comes from the database."""
+"""On-demand indexed search with bounded verification and explicit full verification."""
 
 import json
-from pathlib import Path
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
 from time import monotonic
@@ -13,6 +12,8 @@ from telethon.tl.types import MessageEmpty
 from app.core.logging import logger
 from app.core.timezone import get_date_range_boundaries_utc, get_tashkent_now
 from app.database.repositories.channel_repo import ChannelRepository
+from app.database.repositories.settings_repo import SettingsRepository
+from app.services.channel_metadata import metadata_key, template_metadata
 from app.telegram_client.client import telegram_client_manager
 from app.telegram_client.parser import build_post_url, is_ad_message
 
@@ -30,19 +31,19 @@ class SearchChannel:
 
 async def load_search_channels(session, channel_id: int | None = None) -> list[SearchChannel]:
     channels = await ChannelRepository(session).get_all_active()
-    reference = json.loads((Path(__file__).parents[1] / "reports" / "channel_report_reference.json").read_text(encoding="utf-8"))
+    saved_metadata = await SettingsRepository(session).get_all()
     result = []
     for ch in channels:
         if channel_id is not None and ch.id != channel_id:
             continue
-        metadata = reference.get((ch.username or "").casefold(), {})
+        stored = saved_metadata.get(metadata_key(ch.telegram_channel_id))
+        metadata = json.loads(stored) if stored else template_metadata().get((ch.username or "").casefold(), {})
         result.append(SearchChannel(ch.id, ch.telegram_channel_id, ch.title, ch.url, ch.username,
                                     metadata.get("region", ""), metadata.get("contact", "")))
     return result
 
 
 def parse_keywords(raw: str) -> tuple[str, ...]:
-    # Spaces remain part of a phrase; commas/newlines separate alternatives (OR).
     keywords = tuple(dict.fromkeys(k.strip().casefold()
                                    for k in raw.replace("\n", ",").split(",") if k.strip()))
     if not keywords or len(keywords) > 10 or any(len(k) > 200 for k in keywords):
@@ -57,6 +58,7 @@ class SearchRequest:
     start: datetime | None
     end: datetime
     label: str
+    full_history: bool = False
 
     @classmethod
     def create(cls, raw: str, mode: str, start_date: date | None = None,
@@ -98,6 +100,7 @@ class ChannelSearchResult:
     ads: list[LiveAd] = field(default_factory=list)
     status: str = "not_found"
     detail: str = "Topilmadi"
+    partial: bool = False
 
 
 @dataclass
@@ -119,9 +122,114 @@ Progress = Callable[[int, int, str, int], Awaitable[None]]
 
 
 class LiveSearchService:
-    def __init__(self, manager=telegram_client_manager):
+    def __init__(self, manager=telegram_client_manager, history_limit: int = 500, index_limit: int = 1000):
         self.manager = manager
+        self.history_limit = history_limit
+        self.index_limit = index_limit
         self.retry_at: datetime | None = None
+
+    @staticmethod
+    async def _notify(progress, *args):
+        if progress:
+            try:
+                await progress(*args)
+            except Exception as exc:
+                logger.warning("Qidiruv holatini yuborib bo'lmadi: %s", type(exc).__name__)
+
+    @staticmethod
+    def _posted(message):
+        if not message or isinstance(message, MessageEmpty):
+            return None
+        posted = getattr(message, "date", None)
+        return posted.replace(tzinfo=timezone.utc) if posted and posted.tzinfo is None else posted
+
+    async def _search_channel(self, result, entity, request, progress, index, total):
+        selected = {}
+        scanned = 0
+        last_progress = monotonic()
+
+        def matches(message):
+            # Audit item 2 is deliberately unchanged, including substring matching.
+            return is_ad_message(message.message or "", getattr(message, "entities", None), list(request.keywords))
+
+        async def notify():
+            nonlocal last_progress
+            if monotonic() - last_progress >= 5:
+                await self._notify(progress, index, total, result.channel.title, scanned)
+                last_progress = monotonic()
+
+        offset = request.end + timedelta(seconds=1)
+        try:
+            if not request.full_history:
+                # The index supplies candidates, not proof that hidden links or
+                # arbitrary substrings are absent. History verification decides completeness.
+                for query in dict.fromkeys(k.lstrip("@") or k for k in request.keywords):
+                    if not any(char.isalnum() for char in query):
+                        continue
+                    async for message in self.manager.client.iter_messages(
+                        entity, search=query, limit=self.index_limit, offset_date=offset,
+                    ):
+                        scanned += 1
+                        await notify()
+                        posted = self._posted(message)
+                        if posted is None or posted > request.end:
+                            continue
+                        if request.start and posted < request.start:
+                            break
+                        if matches(message):
+                            selected[message.id] = (message, posted)
+                            if request.mode == "latest":
+                                break
+
+            best_id = max(selected, default=0) if request.mode == "latest" else 0
+            history_complete = False
+            position = 0
+            async for message in self.manager.client.iter_messages(
+                entity, limit=None if request.full_history else self.history_limit + 1, offset_date=offset,
+            ):
+                position += 1
+                if not request.full_history and position > self.history_limit:
+                    break
+                scanned += 1
+                await notify()
+                posted = self._posted(message)
+                if posted is None:
+                    continue
+                if request.start and posted < request.start:
+                    history_complete = True
+                    break
+                if posted > request.end:
+                    continue
+                if matches(message):
+                    selected[message.id] = (message, posted)
+                    if request.mode == "latest":
+                        history_complete = True
+                        break
+                if best_id and message.id <= best_id:
+                    history_complete = True
+                    break
+            else:
+                history_complete = True
+            result.partial = not history_complete
+            if result.partial:
+                result.status, result.detail = "error", "Qisman tekshirildi. To'liq tekshirishni bosing"
+            elif selected:
+                result.status, result.detail = "found", "Topildi"
+        finally:
+            # Preserve discovered posts even if a later request fails or is rate limited.
+            albums = set()
+            ads = []
+            for message, posted in sorted(selected.values(), key=lambda pair: (pair[1], pair[0].id), reverse=True):
+                album = getattr(message, "grouped_id", None)
+                if album is not None and album in albums:
+                    continue
+                if album is not None:
+                    albums.add(album)
+                ads.append(LiveAd(message.id, build_post_url(entity.id, entity.username, message.id),
+                                  posted, message.views, message.forwards))
+                if request.mode == "latest":
+                    break
+            result.ads = ads
 
     async def search(self, channels: list[SearchChannel], request: SearchRequest,
                      progress: Progress | None = None) -> SearchReport:
@@ -136,18 +244,16 @@ class LiveSearchService:
         for index, channel in enumerate(channels):
             result = ChannelSearchResult(channel)
             results.append(result)
-            scanned = 0
-            last_progress = monotonic()
-            if progress:
-                await progress(index, len(channels), channel.title, scanned)
+            if self.retry_at and self.retry_at > datetime.now(timezone.utc):
+                results.extend(ChannelSearchResult(ch, status="error", detail="Telegram cheklovi: tekshirilmadi")
+                               for ch in channels[index + 1:])
+                result.status, result.detail = "error", "Telegram cheklovi: tekshirilmadi"
+                break
+            await self._notify(progress, index, len(channels), channel.title, 0)
             try:
-                # ID identifies the saved channel even after a username change. Telethon
-                # resolves its access hash from the authenticated account/session.
                 try:
                     entity = await self.manager.client.get_entity(channel.telegram_id)
                 except ValueError:
-                    # StringSession does not persist the entity/access-hash cache.
-                    # Read dialog metadata once, then select only stored channel IDs.
                     if dialog_entities is None:
                         dialog_entities = {}
                         async for dialog in self.manager.client.iter_dialogs(limit=None):
@@ -163,48 +269,11 @@ class LiveSearchService:
                     raise ValueError("Resolved channel ID does not match the saved channel")
                 result.channel = replace(channel, title=entity.title, username=entity.username,
                                          url=build_post_url(entity.id, entity.username, 1).rsplit("/", 1)[0])
-                seen_albums = set()
-                async for message in self.manager.client.iter_messages(
-                    entity, limit=None,
-                    # offset_date is exclusive; Telegram timestamps have second precision.
-                    offset_date=request.end + timedelta(seconds=1),
-                ):
-                    if not message or isinstance(message, MessageEmpty):
-                        continue
-                    scanned += 1
-                    posted = getattr(message, "date", None)
-                    if posted is None:
-                        continue
-                    if posted.tzinfo is None:
-                        posted = posted.replace(tzinfo=timezone.utc)
-                    if request.start and posted < request.start:
-                        break
-                    if posted > request.end:
-                        continue
-                    if progress and monotonic() - last_progress >= 5:
-                        await progress(index, len(channels), channel.title, scanned)
-                        last_progress = monotonic()
-                    text = message.message or ""
-                    if not is_ad_message(text, getattr(message, "entities", None), list(request.keywords)):
-                        continue
-                    album = getattr(message, "grouped_id", None)
-                    if album is not None and album in seen_albums:
-                        continue
-                    if album is not None:
-                        seen_albums.add(album)
-                    result.ads.append(LiveAd(
-                        message.id, build_post_url(entity.id, entity.username, message.id),
-                        posted, message.views, message.forwards,
-                    ))
-                    if request.mode == "latest":
-                        break
-                if result.ads:
-                    result.status, result.detail = "found", "Topildi"
+                await self._search_channel(result, entity, request, progress, index, len(channels))
             except FloodWaitError as exc:
                 self.retry_at = datetime.now(timezone.utc) + timedelta(seconds=exc.seconds)
                 result.status = "error"
                 result.detail = f"Tekshiruv tugamadi: Telegram cheklovi ({exc.seconds} soniya)"
-                # Do not hammer the remaining channels during an account-wide cooldown.
                 results.extend(ChannelSearchResult(ch, status="error", detail="Telegram cheklovi: tekshirilmadi")
                                for ch in channels[index + 1:])
                 break
@@ -213,6 +282,5 @@ class LiveSearchService:
             except Exception as exc:
                 logger.warning("Bevosita qidiruvda kanal %s: %s", channel.id, type(exc).__name__)
                 result.status, result.detail = "error", "Tekshiruv tugamadi: kanal yoki aloqa xatosi"
-            if progress:
-                await progress(index + 1, len(channels), channel.title, scanned)
+            await self._notify(progress, index + 1, len(channels), channel.title, 0)
         return SearchReport(request, results, datetime.now(timezone.utc))

@@ -132,9 +132,9 @@ async def test_cancel_stops_running_telegram_request_and_frees_lock(monkeypatch)
     monkeypatch.setattr(search.service, "search", blocked)
     task = asyncio.create_task(search.execute_search(message, state))
     await asyncio.wait_for(entered.wait(), 2)
-    search.cancel_search(777, 777)
+    await search.cancel_search(777, 777)
     await asyncio.wait_for(task, 2)
-    assert not search.search_lock.locked()
+    assert not search.search_slots.locked()
     assert (777, 777) not in search.running
     assert await state.get_state() is None
 
