@@ -3,13 +3,14 @@
 from io import BytesIO
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from app.core.security import sanitize_excel_cell
 from app.core.timezone import to_tashkent
 from app.services.post_report import MISSING, PostReport
+from app.reports.xlsx_validation import validate_xlsx
 
 HEADERS = ["Turi", "Kanal / guruh nomi", "Kanal / guruh havolasi", "Obunachilar / a'zolar",
            "Post havolasi", "Chiqarilgan vaqt (Toshkent)", "Ko'rishlar", "Reaksiyalar",
@@ -20,7 +21,9 @@ def _safe(value):
     if value is None:
         return MISSING
     if isinstance(value, str):
-        value = "".join(ch for ch in value if ord(ch) >= 32 or ch in "\n\t\r")
+        value = "".join(ch for ch in value if ch in "\n\t\r" or
+                        0x20 <= ord(ch) <= 0xD7FF or 0xE000 <= ord(ch) <= 0xFFFD or
+                        0x10000 <= ord(ch) <= 0x10FFFF)
     return sanitize_excel_cell(value)
 
 
@@ -62,9 +65,16 @@ def generate_post_excel(report: PostReport) -> BytesIO:
         ws.row_dimensions[1].height = 34
         for row in range(2, ws.max_row + 1):
             ws.row_dimensions[row].height = 38
-        table = Table(displayName=f"PostReport{number}", ref=ws.dimensions)
-        table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True)
-        ws.add_table(table)
+        # Excel rejects a header-only ListObject even though openpyxl reads it.
+        # Keep the styled header, without inventing an empty data row.
+        if ws.max_row > 1:
+            table = Table(displayName=f"PostReport{number}", ref=ws.dimensions)
+            table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True)
+            ws.add_table(table)
+        else:
+            for cell in ws[1]:
+                cell.fill = PatternFill("solid", fgColor="24476A")
+                cell.font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
         ws.freeze_panes = "C2"
         ws.sheet_view.showGridLines = False
         ws.print_title_rows = "1:1"
@@ -75,5 +85,6 @@ def generate_post_excel(report: PostReport) -> BytesIO:
         ws.page_setup.fitToHeight = 0
     buffer = BytesIO()
     wb.save(buffer)
+    validate_xlsx(buffer)
     buffer.seek(0)
     return buffer

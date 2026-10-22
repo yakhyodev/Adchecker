@@ -169,13 +169,22 @@ hisobot qilib yetkaziladi; tugamagan tekshiruv to'liq natija deb ko'rsatilmaydi.
 Bu doimiy fon monitoringi yoki kunlik tarixiy ko'rishlar yig'ish emas: tanlangan
 sanada **chiqarilgan postlarning hisobot so'ralgan paytdagi statistikasi** olinadi.
 
-Excel'da faqat jadvallar bor: **Asosiy postlar** va **Public forwardlar**.
-Sanalar va har bir manba post ID'si ketma-ket alohida ustun bloklarida beriladi.
-Bir kunda bir nechta post yoki bir kanalga bir postning bir nechta forwardi bo'lsa,
-ular alohida bloklarda saqlanadi. Qatorlar kanal/guruh nomi yoki username bo'yicha
-emas, **raqamli Telegram ID ortib borishi** bo'yicha tartiblanadi; nom o'zgarsa ham ID
-bitta qator bo'lib qoladi. Ustunlar Excel chegarasidan oshsa davom varaqlari yaratiladi.
-URL'lar xotira sarfini oshiradigan alohida hyperlink obyektlarisiz, matn qilib yoziladi.
+Excel uchta ixcham varaqdan iborat: **Umumiy xulosa**, **Postlar**, **Forwardlar**.
+Har post va har forward alohida qatorda yoziladi. Postlar sana-vaqt bo'yicha
+tartiblanadi; **№** oddiy tartib raqami bo'lib, Forwardlar'dagi **Asosiy post №**
+bilan mos keladi. Forwardlar asosiy post, keyin chiqarilgan vaqt bo'yicha saralanadi;
+teng vaqtlarda raqamli kanal/guruh ID'si barqaror tartibni ta'minlaydi.
+Telegram ID, reaksiyalar va izohlar bu formatda ko'rsatilmaydi; alohida Kanallar
+varag'i yo'q. Havolalar bosiladi. Bir kundagi postlar bir rangda, keyingi kalendar
+kuni boshqa rangda (och ko'k / oq) chiqadi. Forward ranglari asosiy post kuniga mos.
+Xulosa mavjud hisoblagichlarni jamlaydi; yetishmagan hisoblagich nolga almashtirilmaydi.
+Yig'ish qisman bo'lsa, xulosa va fayl nomida belgilangan bo'ladi.
+Har faylda ko'pi bilan 20 000 post va 20 000 forward bo'ladi: Excel havola chegarasi
+va hyperlink obyektlarining RAM sarfi cheklanadi. Katta fayllar yana bo'linadi;
+har qismda forwardlarga tegishli asosiy postlar global tartib raqami bilan saqlanadi.
+Har yaratilgan post XLSX faylida ZIP CRC va barcha XML qismlari oqimli tekshiriladi.
+Bo'sh Public forwardlar varag'ida header-only Table yaratilmaydi: bunday faylni
+openpyxl o'qisa ham Microsoft Excel oddiy ochish rejimida rad etishi mumkin.
 Storislar chiqarilmaydi; Private Shares faqat Telegram jami hisoblagichlaridan olinadi.
 Topilmagan qiymatlar **Ma'lumot topilmadi**, haqiqiy nol `0` qilib yoziladi.
 

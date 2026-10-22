@@ -22,7 +22,7 @@ from app.bot.operations import begin_operation, cancel_operation, finish_operati
 from app.core.logging import logger
 from app.core.security import escape_tg_html
 from app.core.timezone import get_tashkent_now
-from app.reports.post_range_excel import generate_post_range_excel
+from app.reports.post_range_excel import MAX_DATA_ROWS, forward_count, generate_post_range_excel
 from app.services.post_range import PostRange, PostRangeService, RangeStore
 from app.services.post_report import PostReportUnavailable
 from app.telegram_client.client import telegram_client_manager
@@ -97,29 +97,32 @@ async def export_range(store, path, **bounds):
 
 
 async def export_files(store, path, max_bytes=49 * 1024 * 1024, max_rows=1048575):
-    """Split from the disk spool when Telegram cannot accept one large workbook."""
-    destinations = store.db.execute("SELECT COUNT(*) FROM destinations").fetchone()[0]
-    pending = deque((offset, min(max_rows, destinations - offset), 0, store.post_count)
-                    for offset in range(0, destinations, max_rows))
-    if not pending:
-        pending.append((0, 0, 0, store.post_count))
-    files, split = [], len(pending) > 1
+    """Split rows without losing forward copies or their global source numbers."""
+    max_rows = min(max_rows, MAX_DATA_ROWS)
+    if max_rows < 1:
+        raise ValueError("Excel qator chegarasi musbat bo'lishi kerak.")
+    pending = deque([(0, store.post_count, 0, forward_count(store))])
+    files, split = [], False
     while pending:
-        offset, rows, post_offset, posts = pending.popleft()
+        post_offset, posts, offset, rows = pending.popleft()
         target = path if not split else path.with_name(f"{path.stem}_qism{len(files) + 1:03}.xlsx")
-        await export_range(store, target, destination_offset=offset, destination_limit=rows,
-                           post_offset=post_offset, post_limit=posts)
-        if target.stat().st_size <= max_bytes:
-            files.append(target)
-            continue
-        target.unlink()
+        if max(posts, rows) <= max_rows:
+            await export_range(store, target, forward_offset=offset, forward_limit=rows,
+                               post_offset=post_offset, post_limit=posts)
+            if target.stat().st_size <= max_bytes:
+                files.append(target)
+                continue
+            target.unlink()
         split = True
-        if rows > 1:
-            half = rows // 2
-            pieces = [(offset, half, post_offset, posts), (offset + half, rows - half, post_offset, posts)]
-        elif posts > 1:
+        # Split sources before forward pages. Every part contains the source
+        # rows referenced by its forwards, with stable numbers across files.
+        if posts > 1:
             half = posts // 2
-            pieces = [(offset, rows, post_offset, half), (offset, rows, post_offset + half, posts - half)]
+            pieces = [(post_offset, half, 0, forward_count(store, post_offset, half)),
+                      (post_offset + half, posts - half, 0, forward_count(store, post_offset + half, posts - half))]
+        elif rows > 1:
+            half = rows // 2
+            pieces = [(post_offset, posts, offset, half), (post_offset, posts, offset + half, rows - half)]
         else:
             raise PostReportUnavailable("Bitta postning Excel natijasi Telegram fayl chegarasidan katta.")
         pending.extendleft(reversed(pieces))
@@ -170,6 +173,7 @@ async def run_range(message, state, selected):
             WORK_ROOT.mkdir(parents=True, exist_ok=True)
             with tempfile.TemporaryDirectory(prefix="range-", dir=WORK_ROOT) as directory:
                 store = RangeStore(Path(directory) / "working.sqlite3")
+                store.selected_range = selected
                 try:
                     try:
                         await service.collect(selected, store, progress)

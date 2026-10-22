@@ -147,7 +147,7 @@ async def test_wait_can_be_cancelled_without_further_requests(store):
 
 
 @pytest.mark.asyncio
-async def test_date_post_column_blocks_numeric_id_order_and_multiple_forwards(store, tmp_path):
+async def test_rows_source_number_links_day_colors_and_multiple_forwards(store, tmp_path):
     client = RangeClient([dated(10, 10), dated(11, 11)])
     first = post(5, 101, 12, 3)
     second = post(6, 101, 19, 4)
@@ -161,33 +161,33 @@ async def test_date_post_column_blocks_numeric_id_order_and_multiple_forwards(st
     path = tmp_path / "range.xlsx"
     generate_post_range_excel(store, path, Event())
     wb = load_workbook(path)
-    source, forwards = wb.worksheets
-    assert source.title == "Asosiy postlar" and forwards.title == "Public forwardlar"
-    assert "2026-10-10 · Post #10" in source.cell(1, 5).value
-    assert "2026-10-11 · Post #11" in source.cell(1, 15).value
-    assert [forwards.cell(row, 1).value for row in (2, 3)] == [-1000000000201, -1000000000101]
-    assert forwards.cell(2, 2).value == "Kanal 201"
-    assert forwards.cell(3, 5).value == "https://t.me/AAA/5"
-    assert forwards.cell(3, 12).value == "https://t.me/AAA/6"
-    assert "2026-10-11 · Post #11" in forwards.cell(1, 19).value
-    assert forwards.cell(3, 19).value == MISSING
-    assert source.cell(2, 6).value == datetime(2026, 10, 10)
-    assert forwards.auto_filter.ref.endswith("3")
-    assert not forwards._hyperlinks and not forwards._charts
+    assert wb.sheetnames == ["Umumiy xulosa", "Postlar", "Forwardlar"]
+    source, forwards = wb["Postlar"], wb["Forwardlar"]
+    assert [source.cell(row, 1).value for row in (2, 3)] == [1, 2]
+    assert [forwards.cell(row, 2).value for row in range(2, 6)] == [1, 1, 1, 2]
+    assert [forwards.cell(row, 5).value for row in range(2, 6)] == ["https://t.me/ZZZ/7", "https://t.me/AAA/5", "https://t.me/AAA/6", "https://t.me/ZZZ/7"]
+    assert source.cell(2, 2).value == datetime(2026, 10, 10)
+    assert source.cell(2, 1).fill.fgColor.rgb == "00EAF3F8"
+    assert source.cell(3, 1).fill.fgColor.rgb == "00FFFFFF"
+    assert forwards.cell(2, 1).fill.fgColor == forwards.cell(4, 1).fill.fgColor
+    assert forwards.cell(5, 1).fill.fgColor.rgb == "00FFFFFF"
+    assert forwards.auto_filter.ref == "A1:H5"
+    assert forwards["E2"].hyperlink.target == "https://t.me/ZZZ/7"
+    assert not forwards._charts
     assert all(cell.data_type != "f" for ws in wb for row in ws for cell in row)
     assert not list(store.db.execute("SELECT 1 FROM posts WHERE complete=0"))
 
 
 @pytest.mark.asyncio
-async def test_xlsx_column_limit_is_split_without_losing_post_blocks(store, tmp_path):
+async def test_source_numbers_remain_global_in_sliced_workbook(store, tmp_path):
     client = RangeClient([dated(10, 10), dated(11, 10, 12), dated(12, 11)])
     await service(client).collect(PostRange(date(2026, 10, 10), date(2026, 10, 11)), store, AsyncMock())
     path = tmp_path / "split.xlsx"
-    generate_post_range_excel(store, path, Event(), max_columns=24)
+    generate_post_range_excel(store, path, Event(), post_offset=1, post_limit=2)
     wb = load_workbook(path)
-    assert len(wb.worksheets) == 4
-    assert all(ws.max_column <= 24 for ws in wb)
-    assert "Post #12" in wb["Asosiy postlar 2"].cell(1, 5).value
+    assert len(wb.worksheets) == 3
+    assert [wb["Postlar"].cell(row, 1).value for row in (2, 3)] == [2, 3]
+    assert wb["Postlar"]["C3"].value.endswith("/12")
 
 
 @pytest.mark.asyncio
@@ -259,7 +259,7 @@ def test_streaming_export_memory_is_bounded_for_many_destinations(store, tmp_pat
     assert peak < 16 * 1024 * 1024
     wb = load_workbook(path, read_only=True)
     try:
-        assert sum(1 for _ in wb["Public forwardlar"].rows) == 2501
+        assert sum(1 for _ in wb["Forwardlar"].rows) == 2501
     finally:
         wb.close()
 
@@ -329,8 +329,8 @@ def test_cancelled_export_removes_xml_from_job_directory(store, tmp_path, monkey
     stop = Event()
     original = post_range_excel._cells
 
-    def cells(ws, values, header=False):
-        yield from original(ws, values, header)
+    def cells(ws, values, header=False, **kwargs):
+        yield from original(ws, values, header, **kwargs)
         if not header:
             stop.set()
 

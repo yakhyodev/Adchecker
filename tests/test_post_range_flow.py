@@ -141,7 +141,7 @@ async def test_oversized_workbook_is_split_from_spool_with_all_ids_preserved(tmp
         populate(store)
         big, half = tmp_path / "full.xlsx", tmp_path / "half.xlsx"
         await post_range.export_range(store, big)
-        await post_range.export_range(store, half, destination_offset=0, destination_limit=30)
+        await post_range.export_range(store, half, forward_offset=0, forward_limit=30)
         limit = (big.stat().st_size + half.stat().st_size) // 2
         files = await post_range.export_files(store, tmp_path / "report.xlsx", max_bytes=limit)
         assert len(files) > 1 and all(path.stat().st_size <= limit for path in files)
@@ -149,10 +149,12 @@ async def test_oversized_workbook_is_split_from_spool_with_all_ids_preserved(tmp
         for path in files:
             wb = load_workbook(path, read_only=True)
             try:
-                actual.extend(row[0] for row in wb["Public forwardlar"].iter_rows(min_row=2, values_only=True))
+                actual.extend(row[4] for row in wb["Forwardlar"].iter_rows(min_row=2, values_only=True))
             finally:
                 wb.close()
-        expected = [row[0] for row in store.db.execute("SELECT id FROM destinations ORDER BY id")]
+        from app.reports.post_range_excel import forward_rows
+        from app.services.post_range import decode
+        expected = [decode(row[2]).post_url for row in forward_rows(store)]
         assert actual == expected
         assert not list(tmp_path.glob("*.xml"))
     finally:
@@ -168,8 +170,33 @@ async def test_excel_row_limit_splits_before_writing_invalid_rows(tmp_path):
         assert len(files) == 3
         for path in files:
             wb = load_workbook(path)
-            assert wb["Public forwardlar"].max_row == 2
+            assert wb["Forwardlar"].max_row == 2
             wb.close()
+    finally:
+        store.close()
+
+
+@pytest.mark.asyncio
+async def test_splitting_multiple_sources_keeps_every_forward_and_its_source_number(tmp_path):
+    store = RangeStore(tmp_path / "spool.sqlite3")
+    try:
+        for number in range(3):
+            source = metrics(post(100 + number), channel())
+            store.save_post(PostReport(source=source, checked_at=NOW, forwards_complete=True), date(2026, 10, 21))
+            for copy in range(3):
+                store.sink(source.message_id).save(metrics(post(1000 + number * 10 + copy, 101), channel(101, "destination")))
+        store.db.commit()
+        files = await post_range.export_files(store, tmp_path / "report.xlsx", max_rows=2)
+        found = []
+        for path in files:
+            wb = load_workbook(path)
+            sources = {row[0]: row[2] for row in wb["Postlar"].iter_rows(min_row=2, values_only=True)}
+            assert wb["Postlar"].max_row <= 3 and wb["Forwardlar"].max_row <= 3
+            for row in wb["Forwardlar"].iter_rows(min_row=2, values_only=True):
+                assert sources[row[1]].endswith(f"/{99 + row[1]}")
+                found.append(row[4])
+            wb.close()
+        assert len(found) == len(set(found)) == 9
     finally:
         store.close()
 
@@ -186,7 +213,7 @@ async def test_late_history_failure_still_delivers_completed_posts_as_partial(mo
     async def uploaded(document):
         assert "qisman" in document.filename
         wb = load_workbook(document.path)
-        assert "qisman" in wb.sheetnames[0]
+        assert wb["Umumiy xulosa"]["B5"].value == "Qisman"
         wb.close()
 
     monkeypatch.setattr(post_range.service, "collect", interrupted)
