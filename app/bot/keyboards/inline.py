@@ -68,7 +68,7 @@ def get_channels_list_keyboard(
 
 
 def get_channel_details_keyboard(channel: Channel) -> InlineKeyboardMarkup:
-    status_text = "⏸ Monitoringni to'xtatish" if channel.is_active else "▶️ Monitoringni davom ettirish"
+    status_text = "⏸ Qidiruvdan chiqarish" if channel.is_active else "▶️ Qidiruvga qo'shish"
     status_action = f"chan:toggle:{channel.id}"
 
     buttons = [
@@ -80,9 +80,6 @@ def get_channel_details_keyboard(channel: Channel) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text=status_text, callback_data=status_action),
-            InlineKeyboardButton(
-                text="💵 CPM / Narx", callback_data=f"chan:price:{channel.id}"
-            ),
         ],
         [
             InlineKeyboardButton(

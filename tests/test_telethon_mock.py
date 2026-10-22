@@ -22,6 +22,7 @@ async def test_resolve_channel_success():
     mock_entity.id = 123456789
     mock_entity.title = "Imkon Savdo"
     mock_entity.username = "imkon_savdo"
+    mock_entity.broadcast = True
 
     client_mgr.client.get_entity = AsyncMock(return_value=mock_entity)
 
@@ -60,7 +61,57 @@ async def test_resolve_channel_not_found():
 async def test_resolve_channel_private_forbidden():
     client_mgr = TelegramClientManager(api_id=123, api_hash="0123456789abcdef0123456789abcdef")
     client_mgr._is_started = True
-    client_mgr.client.get_entity = AsyncMock(side_effect=ChannelPrivateError(request=None))
+    client_mgr.client = AsyncMock(side_effect=ChannelPrivateError(request=None))
 
     with pytest.raises(ChannelAccessDeniedError):
         await client_mgr.resolve_channel("+AbCdEf123")
+
+
+@pytest.mark.asyncio
+async def test_private_invite_reads_existing_membership_without_joining():
+    from telethon.tl.types import ChatInviteAlready
+    from telethon.tl.functions.messages import CheckChatInviteRequest
+    client_mgr = TelegramClientManager(api_id=123, api_hash="0123456789abcdef0123456789abcdef")
+    client_mgr._is_started = True
+    entity = MagicMock(spec=TelethonChannel)
+    entity.id, entity.title, entity.username, entity.broadcast = 123456789, "Private", None, True
+    client_mgr.client = AsyncMock(return_value=ChatInviteAlready(chat=entity))
+    result = await client_mgr.resolve_channel("https://t.me/+ExistingInvite")
+    assert result["telegram_channel_id"] == -100123456789
+    assert result["url"] == "https://t.me/c/123456789"
+    assert isinstance(client_mgr.client.call_args.args[0], CheckChatInviteRequest)
+    assert client_mgr.client.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_invite_without_membership_does_not_join_channel():
+    client_mgr = TelegramClientManager(api_id=123, api_hash="0123456789abcdef0123456789abcdef")
+    client_mgr._is_started = True
+    client_mgr.client = AsyncMock(return_value=object())
+    with pytest.raises(ChannelAccessDeniedError):
+        await client_mgr.resolve_channel("https://t.me/+NotJoined")
+    assert client_mgr.client.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_supergroup_is_not_saved_as_advertising_channel():
+    client_mgr = TelegramClientManager(api_id=123, api_hash="0123456789abcdef0123456789abcdef")
+    client_mgr._is_started = True
+    entity = MagicMock(spec=TelethonChannel)
+    entity.broadcast = False
+    client_mgr.client.get_entity = AsyncMock(return_value=entity)
+    with pytest.raises(ChannelNotFoundError):
+        await client_mgr.resolve_channel("@some_group")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target", ["-100123456789", "https://t.me/c/123456789/555"])
+async def test_saved_channel_id_and_private_post_link_resolve_without_username(target):
+    client_mgr = TelegramClientManager(api_id=123, api_hash="0123456789abcdef0123456789abcdef")
+    client_mgr._is_started = True
+    entity = MagicMock(spec=TelethonChannel)
+    entity.id, entity.title, entity.username, entity.broadcast = 123456789, "Renamed", "new_name", True
+    client_mgr.client.get_entity = AsyncMock(return_value=entity)
+    result = await client_mgr.resolve_channel(target)
+    client_mgr.client.get_entity.assert_awaited_once_with(-100123456789)
+    assert result["telegram_channel_id"] == -100123456789

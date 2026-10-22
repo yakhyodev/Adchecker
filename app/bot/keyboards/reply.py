@@ -6,11 +6,7 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
         [
             KeyboardButton(text="🆕 Oxirgi reklamalar"),
-            KeyboardButton(text="📅 Oxirgi hafta"),
-        ],
-        [
-            KeyboardButton(text="🗓 Oxirgi oy"),
-            KeyboardButton(text="📈 Oxirgi yil"),
+            KeyboardButton(text="🗓 Shu oy"),
         ],
         [
             KeyboardButton(text="📆 Sana bo‘yicha"),
@@ -18,10 +14,6 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
         ],
         [
             KeyboardButton(text="📢 Kanallar"),
-            KeyboardButton(text="🔄 Statistikani yangilash"),
-        ],
-        [
-            KeyboardButton(text="⚙️ Sozlamalar"),
         ],
     ]
     return ReplyKeyboardMarkup(

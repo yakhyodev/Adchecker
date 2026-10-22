@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     SCAN_INTERVAL_MINUTES: int = 60
     RECENT_STATS_UPDATE_INTERVAL_HOURS: int = 3
     OLD_STATS_UPDATE_INTERVAL_HOURS: int = 24
-    ENABLE_AUTO_MONITORING: bool = True
+    ENABLE_AUTO_MONITORING: bool = False
     NOTIFY_ADMINS_ON_NEW_AD: bool = True
 
     # General

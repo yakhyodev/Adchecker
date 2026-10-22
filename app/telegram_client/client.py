@@ -11,6 +11,8 @@ from telethon.errors import (
     ChannelInvalidError,
 )
 from telethon.tl.types import Channel as TelethonChannel, Message, MessageEmpty
+from telethon.tl.types import ChatInviteAlready
+from telethon.tl.functions.messages import CheckChatInviteRequest
 
 from app.core.config import settings
 from app.core.logging import logger
@@ -123,8 +125,30 @@ class TelegramClientManager:
             raise ChannelNotFoundError("Kanal havolasi yoki username bo'sh")
 
         try:
-            entity = await self.client.get_entity(target)
-            if not isinstance(entity, TelethonChannel):
+            if target.startswith("+"):
+                invite = await self.client(CheckChatInviteRequest(target[1:]))
+                if not isinstance(invite, ChatInviteAlready):
+                    raise ChannelAccessDeniedError("Ulangan akkaunt avval kanalga a'zo bo'lishi kerak")
+                entity = invite.chat
+            elif (target == "c" and "/c/" in raw_input) or (target.startswith("-100") and target[1:].isdigit()):
+                private_id = (raw_input.split("/c/", 1)[1].split("/", 1)[0].split("?", 1)[0]
+                              if target == "c" else target[4:])
+                if not private_id.isdigit():
+                    raise ChannelNotFoundError("Noto'g'ri yopiq kanal havolasi")
+                marked_id = int(f"-100{private_id}")
+                try:
+                    entity = await self.client.get_entity(marked_id)
+                except ValueError:
+                    entity = None
+                    async for dialog in self.client.iter_dialogs(limit=None):
+                        if isinstance(dialog.entity, TelethonChannel) and dialog.entity.id == int(private_id):
+                            entity = dialog.entity
+                            break
+                    if entity is None:
+                        raise ChannelAccessDeniedError("Ulangan akkauntda kanal topilmadi")
+            else:
+                entity = await self.client.get_entity(target)
+            if not isinstance(entity, TelethonChannel) or not entity.broadcast:
                 raise ChannelNotFoundError("Ko'rsatilgan havola kanal emas")
 
             # Format full telegram channel id with -100 prefix if needed
@@ -150,6 +174,8 @@ class TelegramClientManager:
                 "entity": entity,
             }
 
+        except (ChannelNotFoundError, ChannelAccessDeniedError):
+            raise
         except (UsernameNotOccupiedError, UsernameInvalidError, ChannelInvalidError):
             raise ChannelNotFoundError(f"Kanal topilmadi: {raw_input}")
         except ChannelPrivateError:

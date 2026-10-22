@@ -21,14 +21,12 @@ async def setup_bot_commands(bot_instance: Bot) -> None:
     commands = [
         BotCommand(command="start", description="🏠 Asosiy menyu"),
         BotCommand(command="recent", description="🆕 Oxirgi reklamalar"),
+        BotCommand(command="search", description="🔎 Kalit so'z va davr bo'yicha qidirish"),
         BotCommand(command="channels", description="📢 Kanallarni boshqarish"),
-        BotCommand(command="stats_week", description="📅 Oxirgi 7 kunlik statistika"),
-        BotCommand(command="stats_month", description="🗓 Oxirgi 30 kunlik statistika"),
-        BotCommand(command="stats_year", description="📈 Oxirgi 365 kunlik statistika"),
+        BotCommand(command="stats_month", description="🗓 Shu oydagi reklamalar"),
         BotCommand(command="custom_range", description="📆 Sana bo'yicha hisobot"),
         BotCommand(command="excel", description="📊 Excel hisobot yuklab olish"),
-        BotCommand(command="refresh", description="🔄 Statistikani yangilash"),
-        BotCommand(command="settings", description="⚙️ Sozlamalar va tizim holati"),
+        BotCommand(command="cancel", description="⬅️ Qidiruv yoki amalni bekor qilish"),
         BotCommand(command="help", description="📖 Yordam va yo'riqnoma"),
     ]
     try:

@@ -1,4 +1,3 @@
-import asyncio
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
@@ -6,18 +5,16 @@ from aiogram.fsm.context import FSMContext
 
 from app.database.session import get_db_session
 from app.services.channel_service import ChannelService
-from app.services.monitoring import MonitoringService
+from app.bot.handlers.search import cancel_search, periods_keyboard, ask_keywords
 from app.bot.states.forms import AddChannelState, ChannelPriceState
 from app.bot.keyboards.inline import (
     get_channels_menu_keyboard,
     get_channels_list_keyboard,
     get_channel_details_keyboard,
-    get_scan_choice_keyboard,
     get_delete_confirmation_keyboard,
 )
 from app.bot.keyboards.reply import get_cancel_keyboard, get_main_menu_keyboard
 from app.core.security import escape_tg_html
-from app.core.timezone import format_tashkent
 from app.telegram_client.client import ChannelNotFoundError, ChannelAccessDeniedError
 from app.core.logging import logger
 
@@ -27,17 +24,19 @@ router = Router(name="channels_router")
 @router.message(F.text == "📢 Kanallar")
 @router.message(Command("channels"))
 async def handle_channels_menu(message: Message, state: FSMContext) -> None:
+    cancel_search(message.chat.id, message.from_user.id)
     await state.clear()
     text = (
         "📢 <b>KANALLARNI BOSHQARISH</b>\n\n"
-        "Ushbu bo'limda IMKON reklamalari joylanadigan Telegram kanallarni qo'shishingiz, "
-        "ulardagi reklamalarni qidirishingiz va monitoring holatini sozlashingiz mumkin."
+        "Qidiruv faqat shu ro'yxatdagi faol kanallarda ishlaydi. "
+        "Kanallarni bir xabarda qo'shish, ro'yxatdan ko'rish yoki olib tashlash mumkin."
     )
     await message.answer(text, parse_mode="HTML", reply_markup=get_channels_menu_keyboard())
 
 
 @router.callback_query(F.data == "chan:menu")
 async def callback_channels_menu(callback: CallbackQuery, state: FSMContext) -> None:
+    cancel_search(callback.message.chat.id, callback.from_user.id)
     await state.clear()
     text = (
         "📢 <b>KANALLARNI BOSHQARISH</b>\n\n"
@@ -49,15 +48,20 @@ async def callback_channels_menu(callback: CallbackQuery, state: FSMContext) -> 
 
 @router.callback_query(F.data == "chan:add", flags={"requires_write": True})
 async def callback_add_channel_prompt(callback: CallbackQuery, state: FSMContext) -> None:
+    cancel_search(callback.message.chat.id, callback.from_user.id)
+    await state.clear()
     await state.set_state(AddChannelState.waiting_for_url)
     text = (
         "➕ <b>YANGI KANAL QO'SHISH</b>\n\n"
-        "Kanalning havolasini yoki username'ini yuboring.\n\n"
+        "Bir yoki ko'p kanal havolasi / username'ini yuboring. "
+        "Ularni bo'shliq yoki yangi qator bilan ajrating.\n"
+        "Barcha kanallar Telegram ID orqali saqlanadi, takroriylari qayta qo'shilmaydi.\n\n"
         "<i>Qabul qilinadigan formatlar:</i>\n"
         "• <code>https://t.me/kanal_nomi</code>\n"
         "• <code>https://t.me/s/kanal_nomi</code>\n"
         "• <code>@kanal_nomi</code>\n"
-        "• <code>kanal_nomi</code>"
+        "• <code>kanal_nomi</code>\n\n"
+        "<code>@kanal_bir https://t.me/kanal_ikki\n@kanal_uch</code>"
     )
     await callback.message.answer(text, parse_mode="HTML", reply_markup=get_cancel_keyboard())
     await callback.answer()
@@ -65,41 +69,38 @@ async def callback_add_channel_prompt(callback: CallbackQuery, state: FSMContext
 
 @router.message(AddChannelState.waiting_for_url, flags={"requires_write": True})
 async def process_channel_input(message: Message, state: FSMContext) -> None:
+    if not message.text:
+        await message.answer("Kanal havolalarini matn ko'rinishida yuboring.")
+        return
     raw_text = message.text.strip()
     if raw_text in ("⬅️ Ortga", "🏠 Bosh menyu"):
         await state.clear()
         await message.answer("Amal bekor qilindi.", reply_markup=get_main_menu_keyboard())
         return
 
-    wait_msg = await message.answer("⏳ Kanal tekshirilmoqda, iltimos kuting...")
+    wait_msg = await message.answer("⏳ Yuborilgan kanallar tekshirilib, Telegram ID bilan saqlanmoqda...")
 
     try:
         async with get_db_session() as session:
             service = ChannelService(session)
-            channel, is_new = await service.add_channel(raw_text)
+            results = await service.add_channels(raw_text)
 
-            ch_title = escape_tg_html(channel.title)
-            ch_url = escape_tg_html(channel.url)
-
-            if not is_new:
-                await wait_msg.edit_text(
-                    f"⚠️ <b>Bu kanal allaqachon tizimga qo'shilgan!</b>\n\n"
-                    f"📢 Kanal: <b>{ch_title}</b>\n"
-                    f"🔗 Havola: {ch_url}\n"
-                    f"Holati: {'🟢 Faol' if channel.is_active else '⏸ To\'xtatilgan'}",
-                    parse_mode="HTML",
-                    reply_markup=get_channel_details_keyboard(channel),
-                )
-            else:
-                await wait_msg.edit_text(
-                    f"✅ <b>Kanal muvaffaqiyatli qo‘shildi!</b>\n\n"
-                    f"📢 Kanal: <b>{ch_title}</b>\n"
-                    f"🔗 Havola: {ch_url}\n"
-                    f"Monitoring: 🟢 Faol\n\n"
-                    f"Endi ushbu kanaldan reklamalarni qidirishni boshlashingiz mumkin:",
-                    parse_mode="HTML",
-                    reply_markup=get_channel_details_keyboard(channel),
-                )
+        added = sum(item.status == "added" for item in results)
+        duplicates = sum(item.status == "duplicate" for item in results)
+        errors = sum(item.status == "error" for item in results)
+        await wait_msg.edit_text(f"✅ Saqlandi: {added}\nℹ️ Avval saqlangan: {duplicates}\n⚠️ Saqlanmadi: {errors}")
+        chunk = ""
+        for item in results:
+            label = escape_tg_html((item.title or item.supplied)[:150])
+            detail = f"<code>{item.telegram_id}</code>" if item.telegram_id else escape_tg_html(item.detail)
+            icon = {"added": "✅", "duplicate": "ℹ️", "error": "⚠️"}[item.status]
+            line = f"{icon} {label} — {detail}\n"
+            if len(chunk) + len(line) > 3500:
+                await message.answer(chunk)
+                chunk = ""
+            chunk += line
+        if chunk:
+            await message.answer(chunk)
 
         await state.clear()
         await message.answer("Kerakli amalni tanlang:", reply_markup=get_main_menu_keyboard())
@@ -141,7 +142,7 @@ async def callback_list_channels(callback: CallbackQuery) -> None:
             await callback.answer()
             return
 
-        text = f"📋 <b>MONITORING KANALLARI RO'YXATI</b> (Jami: {len(channels)} ta):\n\nKanalni tanlang:"
+        text = f"📋 <b>SAQLANGAN KANALLAR</b> (Jami: {len(channels)} ta):\n\nKanalni tanlang:"
         await callback.message.edit_text(
             text,
             parse_mode="HTML",
@@ -163,18 +164,14 @@ async def callback_view_channel(callback: CallbackQuery) -> None:
         ch_title = escape_tg_html(channel.title)
         ch_url = escape_tg_html(channel.url)
         status_text = "🟢 Faol" if channel.is_active else "⏸ To'xtatilgan"
-        last_scan = format_tashkent(channel.last_scanned_at)
-        cpm_info = f"{channel.cpm_price:,.2f} so'm" if channel.cpm_price else "Belgilanmagan"
 
         text = (
             f"📢 <b>KANAL MA'LUMOTLARI</b>\n\n"
             f"Nomi: <b>{ch_title}</b>\n"
             f"Havola: {ch_url}\n"
             f"Telegram ID: <code>{channel.telegram_channel_id}</code>\n"
-            f"Monitoring holati: <b>{status_text}</b>\n"
-            f"Bir reklama narxi (CPM): <b>{cpm_info}</b>\n"
-            f"Oxirgi tekshirilgan vaqt: {last_scan}\n"
-            f"Oxirgi post ID: <code>{channel.last_scanned_message_id or '—'}</code>"
+            f"Qidiruv holati: <b>{status_text}</b>\n"
+            "Kanal nomi yoki username'i o'zgarsa ham qidiruv Telegram ID orqali ishlaydi."
         )
         await callback.message.edit_text(
             text,
@@ -210,7 +207,7 @@ async def callback_delete_confirm(callback: CallbackQuery) -> None:
     channel_id = int(callback.data.split(":")[2])
     text = (
         "⚠️ <b>Kanalni o'chirishni tasdiqlaysizmi?</b>\n\n"
-        "Kanal monitoringdan chiqariladi. Tarixiy reklama statistikasi bazada saqlanib qoladi."
+        "Kanal saqlangan ro'yxatdan chiqariladi va keyingi qidiruvlarda qatnashmaydi."
     )
     await callback.message.edit_text(
         text,
@@ -238,8 +235,11 @@ async def callback_delete_execute(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data.startswith("chan:scan_choice:"), flags={"requires_write": True})
-async def callback_scan_choice(callback: CallbackQuery) -> None:
+async def callback_scan_choice(callback: CallbackQuery, state: FSMContext) -> None:
     channel_id = int(callback.data.split(":")[2])
+    cancel_search(callback.message.chat.id, callback.from_user.id)
+    await state.clear()
+    await state.update_data(channel_id=channel_id)
     text = (
         "🔍 <b>REKLAMALARNI QIDIRISH</b>\n\n"
         "Qaysi davr uchun reklamalarni qidirish kerak?"
@@ -247,60 +247,22 @@ async def callback_scan_choice(callback: CallbackQuery) -> None:
     await callback.message.edit_text(
         text,
         parse_mode="HTML",
-        reply_markup=get_scan_choice_keyboard(channel_id),
+        reply_markup=periods_keyboard(channel_id),
     )
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("chan:scan:"), flags={"requires_write": True})
-async def callback_execute_scan(callback: CallbackQuery) -> None:
+async def callback_execute_scan(callback: CallbackQuery, state: FSMContext) -> None:
     parts = callback.data.split(":")
     channel_id = int(parts[2])
     days = int(parts[3])
 
-    period_desc = f"oxirgi {days} kun" if days > 0 else "barcha mavjud tarix"
-    await callback.message.edit_text(
-        f"⏳ <b>{period_desc.capitalize()} bo'yicha qidiruv boshlandi...</b>\n\n"
-        f"Kanal xabarlari tahlil qilinmoqda, bu biroz vaqt olishi mumkin.",
-        parse_mode="HTML",
-    )
+    cancel_search(callback.message.chat.id, callback.from_user.id)
+    await state.clear()
+    await state.update_data(channel_id=channel_id, mode={7: "week", 30: "month", 365: "year"}.get(days, "latest"))
     await callback.answer()
-
-    # Async background task
-    async def _async_scan():
-        async with get_db_session() as session:
-            mon_service = MonitoringService(session)
-            res = await mon_service.run_channel_initial_scan(
-                channel_id=channel_id,
-                days_limit=days if days > 0 else None,
-            )
-            ch_service = ChannelService(session)
-            ch = await ch_service.get_channel_by_id(channel_id)
-
-            if res.get("status") == "completed":
-                ans_text = (
-                    f"✅ <b>Qidiruv yakunlandi!</b>\n\n"
-                    f"📢 Kanal: <b>{escape_tg_html(ch.title if ch else '')}</b>\n"
-                    f"🔍 Ko'rib chiqilgan xabarlar: <b>{res.get('posts_scanned', 0)} ta</b>\n"
-                    f"🎯 Topilgan yangi reklamalar: <b>{res.get('ads_found', 0)} ta</b>"
-                )
-            elif res.get("status") == "already_running":
-                ans_text = "⚠️ Ushbu kanal uchun tekshiruv allaqachon bajarilmoqda."
-            elif res.get("status") == "flood_wait":
-                ans_text = f"⏳ Telegram cheklovi: {res.get('seconds')} soniya kuting."
-            else:
-                ans_text = f"❌ Qidiruvda xatolik: {escape_tg_html(res.get('message', 'Noma\'lum xato'))}"
-
-            try:
-                await callback.message.edit_text(
-                    ans_text,
-                    parse_mode="HTML",
-                    reply_markup=get_channel_details_keyboard(ch) if ch else None,
-                )
-            except Exception:
-                pass
-
-    asyncio.create_task(_async_scan())
+    await ask_keywords(callback.message, state)
 
 
 @router.callback_query(F.data.startswith("chan:price:"), flags={"requires_write": True})

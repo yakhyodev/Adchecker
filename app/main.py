@@ -8,7 +8,7 @@ from app.database.session import init_db, close_db, get_db_session
 from app.database.repositories.admin_repo import AdminRepository
 from app.telegram_client.client import telegram_client_manager
 from app.bot.bot_instance import bot, dp, setup_dispatcher, setup_bot_commands
-from app.scheduler.jobs import setup_scheduler, scheduler
+from app.scheduler.jobs import scheduler
 
 
 async def on_startup() -> None:
@@ -42,10 +42,8 @@ async def on_startup() -> None:
     # 4. Set up bot commands in Telegram
     await setup_bot_commands(bot)
 
-    # 5. Setup and start background scheduler
-    setup_scheduler()
-    scheduler.start()
-    logger.info("✅ Rejalashtirilgan monitoring (APScheduler) ishga tushdi")
+    # Searches now run only on user request. Keep existing historical data intact.
+    logger.info("✅ Bevosita qidiruv rejimi: fon skanerlashi va statistikani bazaga yig'ish o'chirilgan")
 
 
 async def on_shutdown() -> None:

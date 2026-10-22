@@ -1,236 +1,155 @@
-# 📊 IMKON Telegram Ads Monitoring System
+# Telegram reklama qidiruvi
 
-O‘zbekistondagi **IMKON savdo markazi** uchun Telegram kanallardagi reklamalarni avtomatlashtirilgan monitoring qilish, statistikani to'plash va tahliliy Excel hisobotlar shakllantirish tizimi.
+Bot bazada **oldindan saqlangan faol kanallardan** foydalanuvchi kiritgan kalit
+so'z va davr bo'yicha reklamalarni ulangan Telegram akkaunti orqali bevosita qidiradi.
+Akkaunt a'zo bo'lgan boshqa kanallarning postlari tekshirilmaydi.
 
-Ushbu tizim xodimlarning kanallardagi `@imkonhelpbot` manzili mavjud bo'lgan postlarni qo'lda qidirish, ko'rishlar sonini daftarga yoki Excelga qo'lda yozib borish jarayonini 100% avtomatlashtiradi.
+## Foydalanish
 
----
+1. `/start` yuboring.
+2. **📢 Kanallar → ➕ Kanal qo'shish** orqali bir yoki ko'p havola yuboring.
+   Bo'shliq va yangi qator bilan ajratish mumkin:
 
-## 🚀 ASOSIY IMKONIYATLAR
+   ```text
+   @kanal_bir https://t.me/kanal_ikki
+   https://t.me/s/kanal_uch @kanal_tort
+   ```
 
-- 📢 **Kanallarni qulay boshqarish:** Telegram bot orqali istalgan ko'rinishdagi havola (`@kanal`, `https://t.me/kanal`, `https://t.me/s/kanal`) orqali kanal qo'shish, to'xtatish va o'chirish (soft-delete).
-- 🔍 **Reklamalarni avtomatik aniqlash:** `@imkonhelpbot` kaliti orqali barcha postlar, rasm/video izohlari (caption) va bosiladigan havola (entity) lardan reklamalarni aniqlash.
-- ⏱ **Dinamik statistika tarixi:** Har bir postning ko'rishlar (views), reaksiyalar (reactions) va forwardlar sonini vaqtlar kesimida (`view_snapshots`) saqlash va 24 soatlik o'sish dinamikasini hisoblash.
-- 📊 **Professional Excel Generator:** 4 varaqdan iborat (Reklamalar, Kanallar statistikasi, Umumiy hisobot, Kunlik statistika) IMKON brendi ranglaridagi formatlangan Excel hisobot.
-- 📈 **Davriy hisobotlar:** Oxirgi 7 kunlik, 30 kunlik, 365 kunlik va istalgan maxsus sana oralig'i (`YYYY-MM-DD`) bo'yicha tahlil.
-- 💵 **CPM va reyting:** Kanallar kesimida reklama xarajati bo'yicha CPM (*Cost Per Mille* - 1,000 ko'rish narxi) va eng samarali kanallar reytingi.
-- 🔔 **Tezkor bildirishnoma:** Yangi reklama joylanganda administratorlarga bir zumda xabar berish.
-- 🛡 **Ko'p bosqichli xavfsizlik:** Rolli kirish nazorati (Superadmin, Admin, Viewer), Excel formula injection himoyasi, Telegram FloodWait cheklovlarini to'g'ri boshqarish.
+   Har kanal Telegram ID bilan saqlanadi. Bitta kanalning turli havolalari yoki
+   yangi username'i ikkinchi yozuv yaratmaydi; bazadagi Telegram ID ustunida
+   `UNIQUE` cheklovi mavjud. Xato havola qolgan to'g'ri kanallarni saqlashni to'xtatmaydi.
+   Natijada saqlangan, avval mavjud va saqlanmagan havolalar alohida ko'rsatiladi.
+   Telegram FloodWait bersa, oldingi muvaffaqiyatli kanallar saqlanadi;
+   qolganlarini ko'rsatilgan kutish vaqtidan keyin qayta yuborish mumkin.
+3. **🆕 Oxirgi reklamalar**, **🗓 Shu oy** yoki **📆 Sana bo‘yicha** ni tanlang.
+4. Kalit so'z yoki iborani yuboring, masalan `@imkonhelpbot`, `chegirma` yoki
+   `IMKON savdo`. Bo'shliqlar ibora ichida saqlanadi. Bir nechta muqobil kalitni
+   vergul yoki yangi qator bilan ajrating: ulardan bittasi mos kelsa post olinadi.
+5. Natijalarni botda sahifalab ko'ring va yuborilgan Excel hisobotni oching.
 
----
+**Oxirgi reklamalar** har kanaldan eng yangi mos bitta reklamani qaytaradi.
+**Shu oy** Toshkent vaqti bilan oyning 1-kuni 00:00 dan so'rov vaqtigacha bo'lgan
+barcha mos reklamalarni oladi. Maxsus sana oralig'ining boshlanish va tugash
+kunlari ham hisobga olinadi. Kelajakdagi sanalar qabul qilinmaydi.
 
-## 🛠 TEXNOLOGIYALAR
+Kanallar ro'yxatida kanalni **o'chirish**, qidiruvdan vaqtincha chiqarish yoki
+faollashtirish mumkin. O'chirilgan va faol bo'lmagan kanallar qidirilmaydi.
+O'chirish Telegram kanalidan chiqib ketmaydi va mavjud eski reklama tarixini o'chirmaydi.
+O'chirilgan kanal qayta qo'shilsa, o'sha ID li yozuv tiklanadi.
 
-- **Python 3.12+** (Asinxron arxitektura `asyncio`)
-- **aiogram 3.x** — Telegram Bot API
-- **Telethon** — Telegram MTProto Client API (kanallar tarixini o'qish uchun)
-- **PostgreSQL** — Asosiy ma'lumotlar bazasi
-- **SQLAlchemy 2.x (Async)** & **Alembic** — ORM va migratsiyalar
-- **APScheduler** — Asinxron fon monitoringi (Background worker)
-- **openpyxl** & **pandas** — Excel fayllarini shakllantirish
-- **Docker** & **Docker Compose** — Konteynerizatsiya va oson deployment
-- **pytest** — Avtomatlashtirilgan testlar to'plami
+## Hisobot shakli
 
----
+`Top Reklama Tg.xlsx` namunasidagi jadval tartibi qo'llanadi:
 
-## 📋 BOSQICHMA-BOSQICH O'RNATISH YO'RIQNOMASI
+- har kanal bitta qatorda;
+- boshida **VILOYAT**, **Kanal nomi**, kanal havolasi va aloqa havolasi;
+- aloqa ustuni namunadagi kabi yashirilgan, Excel orqali ochish mumkin;
+- davriy qidiruvda har sanaga **reklama havolasi / ko'rilishlar / ulashishlar**
+  ustunlari yonma-yon; bir kunda bir nechta mos post bo'lsa alohida bloklar;
+- sana bo'yicha natijalar bir xil ustunlarga joylashadi, yo'q reklama katagi **qizil**;
+- oxirgi reklama rejimida bitta havola bloki va reklama sanasi;
+- kanalga kirish, aloqa yoki Telegram cheklovi sabab tugamagan tekshiruv **sariq**;
+- ko'rilishlar namunadagi kabi `60.2k` ko'rinishida, ichki qiymati haqiqiy son;
+- Telegram bermagan son bo'sh qoladi, haqiqiy `0` esa nol sifatida saqlanadi;
+- pastda qidirilgan kalitlar, davr va statistikani olish vaqti.
 
-### 1-qadam: Telegram Bot yaratish (BotFather)
-1. Telegramda [@BotFather](https://t.me/BotFather) botiga kiring.
-2. `/newbot` buyrug'ini yuboring.
-3. Botingizga nom (masalan, `IMKON Ads Monitor`) va username bering.
-4. Berilgan `BOT_TOKEN` ni nusxalab oling.
+Namunadagi hudud va aloqa qiymatlari `app/reports/channel_report_reference.json`
+faylida saqlanadi. Ular ro'yxatda saqlangan kanal username'i bilan moslanadi;
+namunada bo'lmagan kanalning hududi va aloqasi bo'sh qoladi. Bu ma'lumotnoma
+kanalni qidirish manbasi emas: postlar faqat bazada saqlangan **Telegram ID** orqali olinadi.
+Namunaning eski postlari va ko'rilishlari yangi natija sifatida ishlatilmaydi.
 
-### 2-qadam: Telegram Developer API ma'lumotlarini olish
-1. [my.telegram.org](https://my.telegram.org) saytiga shaxsiy Telegram raqamingiz bilan kiring.
-2. **API development tools** bo'limiga o'ting.
-3. Yangi ilova yarating (masalan, `imkon_monitor`).
-4. **App api_id** va **App api_hash** ma'lumotlarini nusxalab oling.
+## Qidiruv qanday ishlaydi
 
-### 3-qadam: Administrator Telegram ID sini aniqlash
-1. Telegramda [@userinfobot](https://t.me/userinfobot) ga `/start` yuboring.
-2. O'zingizning raqamli `Id` raqamingizni oling (masalan, `123456789`).
+Matn, media izohi va yashirin havolalar katta-kichik harflarni ajratmasdan
+tekshiriladi. Bir media albomidagi mos xabarlar bitta reklama hisoblanadi.
+Qidiruv tanlangan sanadan orqaga o'tganda, oxirgi reklama rejimida esa birinchi
+mos post topilganda to'xtaydi. Xabarlar soniga sun'iy chegara qo'yilmagan.
+Reklama topilmagan kanalning katta tarixi ko'proq vaqt olishi mumkin.
 
-### 4-qadam: Konfiguratsiya (.env fayli)
-Loyihaning asosiy papkasida `.env.example` faylidan nusxa olib, `.env` faylini yarating:
+Username yoki kanal nomi almashsa ham saqlangan ID ishlatiladi. Sessiyada
+kanalning access hash'i bo'lmasa, akkaunt dialoglarining metama'lumotlari olinib,
+faqat saqlangan ID lar ajratiladi; boshqa kanallarning postlari qidirilmaydi.
+Hisobotda Telegram qaytargan hozirgi nom va havola ishlatiladi.
 
-```bash
-cp .env.example .env
-```
+Qidiruv reklamalar, snapshotlar yoki skanerlash checkpointlarini bazaga yozmaydi.
+Fon monitoringi ishga tushmaydi, hatto eski `.env` yoki bazada avtomatik monitoring
+yoqilgan bo'lsa ham. Mavjud tarixiy jadvallar saqlanadi. Baza kanal ro'yxati,
+administratorlar va mavjud sozlamalar uchun ishlatiladi.
 
-`.env` faylini ochib, ma'lumotlarni kiriting:
-```ini
-BOT_TOKEN="sizning_bot_tokeningiz"
-ADMIN_IDS="123456789"
-TELEGRAM_API_ID=12345678
-TELEGRAM_API_HASH="sizning_api_hash"
-DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/imkon_ads"
-```
+Natijalar Excelni qayta yuklash va sahifalash uchun faqat jarayon xotirasida
+30 daqiqa turadi (jami eng ko'pi 8 ta hisobot). Natija tugmalari faqat hisobotni
+olgan foydalanuvchi va chat uchun ishlaydi. Yangi qidiruv statistikani qaytadan oladi.
+Bir vaqtda bitta Telegram qidiruvi ishlaydi. **/cancel**, **/start** yoki bosh
+menyu orqali qidiruvni to'xtatish mumkin.
 
-### 5-qadam: Telegram Akkauntga kirish (Telethon Sessiyasi)
-`.env` faylida `TELEGRAM_API_ID` va `TELEGRAM_API_HASH` ni to'ldiring.
-Telegram akkauntiga server terminalida bir marta autentifikatsiya qilinadi:
+## Ishga tushirish
 
-```bash
-python -u scripts/telegram_login.py
-```
+Python 3.12+, PostgreSQL va Telegram akkaunti sessiyasi kerak.
 
-- `1` — telefon orqali: raqam va Telegram yuborgan kodni kiriting. Skript kodning
-  yetkazish turini ko'rsatadi; noto'g'ri kodni uch martagacha qayta kiritish mumkin.
-- `2` — QR orqali: SSH terminalidagi QR-kodni telefonda **Telegram → Sozlamalar →
-  Qurilmalar → Qurilmani ulash** bo'limidan skanerlang va ulanishni tasdiqlang.
-  Terminalni kod qatorlari bo'linmaydigan darajada kengaytiring.
-- QR muddati tugasa, `y` yoki `Enter` bilan yangilang; `n` bilan bekor qiling.
-- Har ikki usulda 2FA yoqilgan bo'lsa, parol `getpass` orqali yashirin kiritiladi.
-  Interaktiv SSH terminali kerak; parolni yashirish imkoni bo'lmasa login to'xtaydi.
-- Muvaffaqiyatli kirgach, faqat `TELEGRAM_SESSION_STRING` mavjud `.env` fayliga
-  avtomatik yoziladi. Boshqa qiymatlar o'zgarmaydi. Sessiya, API hash va parol
-  terminalga chiqarilmaydi.
-
-**Oracle / Docker Compose:** loyiha papkasida `.env` mavjudligini tekshiring.
-Host faylini ulash sessiyani vaqtinchalik konteyner o'chirilganda ham saqlaydi:
-
-```bash
-git pull --ff-only
-docker compose build bot
-docker compose run --rm --no-deps \
-  -v "$PWD/.env:/app/.env" \
-  bot python -u scripts/telegram_login.py
-```
-
-Login tugagach, yangi `.env` qiymatini botga yuklang (`restart`ning o'zi yetmaydi):
-
-```bash
-docker compose up -d --no-deps --force-recreate bot
-docker compose logs --tail=60 bot
-```
-
-Logda `Telethon MTProto client avtorizatsiyadan o'tgan` xabarini tekshiring.
-QR tasdiqlangani Telegram bot va baza ham ishlayotganini tasdiqlamaydi.
-
----
-
-## 🐳 DOCKER COMPOSE ORQALI ISHGA TUSHIRISH (Tavsiya etiladi)
-
-Docker va Docker Compose o'rnatilgan serverda bitta buyruq bilan ishga tushirish:
-
-```bash
-# Konteynerlarni yig'ish va fonda ishga tushirish
-docker compose up -d --build
-
-# Loglarni kuzatish
-docker compose logs -f bot
-```
-
-Konteyner to'xtatilganda yoki qayta yuklanganda ma'lumotlar bazasi (`pg_data`) va sessiyalar to'liq saqlanib qoladi.
-
----
-
-## 💻 LOKAL MUHITDA ISHGA TUSHIRISH (DOCKER'SIZ)
-
-1. Python virtual muhitini yarating va faollashtiring:
-```bash
+```powershell
 python -m venv .venv
-# Windows:
-.\.venv\Scripts\activate
-# Linux/macOS:
-source .venv/bin/activate
-```
-
-2. Kerakli kutubxonalarni o'rnating:
-```bash
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-3. Ma'lumotlar bazasi migratsiyalarini qo'llang:
-```bash
+`.env` ichida `BOT_TOKEN`, `ADMIN_IDS`, `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`
+va `DATABASE_URL` ni to'ldiring. Lokal baza uchun host `localhost`, Docker
+Compose uchun `postgres`. Namunaviy token/API qiymatlari bilan bot ishga tushmaydi.
+
+Akkaunt saqlanadigan kanallarga kirish huquqiga ega bo'lishi kerak. Yopiq kanalning
+taklif havolasi faqat akkaunt avvaldan a'zo bo'lsa qabul qilinadi; bot avtomatik a'zo bo'lmaydi.
+
+```powershell
+python -u scripts/telegram_login.py
 alembic upgrade head
-```
-
-4. Dasturni ishga tushiring:
-```bash
 python -m app.main
 ```
 
-Buyruqni loyiha ildiz papkasidan bajaring. Lokal PostgreSQL uchun `.env` dagi
-`DATABASE_URL` hosti `localhost`, Docker Compose uchun esa `postgres` bo'ladi.
-Namunaviy token/API qiymatlari yoki bo'sh `ADMIN_IDS` bilan dastur ishga tushmaydi;
-xabarda to'ldirilishi kerak bo'lgan sozlamalar nomlari ko'rsatiladi.
+Login skripti telefon kodi yoki QR orqali kirishni, yashirin 2FA parolini va
+sessiyani mavjud `.env` ga saqlashni qo'llaydi. Sessiya va parollar logga chiqarilmaydi.
+Bot uchun mavjud `admin` / `superadmin` kanallarni boshqara oladi;
+`viewer` qidirishi va hisobot olishi mumkin.
 
-`viewer` roli hisobotlar va ro'yxatlarni ko'rishi mumkin. Kanal qo'shish/o'chirish,
-narx va qidiruv kalitlarini o'zgartirish, monitoringni boshqarish hamda qo'lda
-skanerlash faqat `admin` va `superadmin` rollari uchun ochiq.
-Kanal to'xtatilganda avtomatik qidiruv va post statistikasi yangilanishi to'xtaydi.
-CPM jami reklama xarajati / jami ko'rishlar * 1000 sifatida hisoblanadi;
-postning alohida narxi bo'lmasa, kanalning bir reklama narxi olinadi.
-
----
-
-## 🧪 TESTLARNI ISHGA TUSHIRISH
-
-Avtomatlashtirilgan testlarni ishga tushirish uchun:
+Docker Compose:
 
 ```bash
-pytest -v
+docker compose up -d --build
+docker compose logs --tail=60 bot
 ```
 
-Testlar quyidagilarni to'liq tekshiradi:
-- Havolalarni to'g'ri normalizatsiya qilish.
-- Takroriy kanal va reklamalarning oldini olish (idempotency).
-- `@imkonhelpbot` kalitini katta-kichik harflardan qat'i nazar aniqlash.
-- Media caption va entity linklaridan qidiruv.
-- Haftalik, oylik, yillik va maxsus davr hisobotlari.
-- 4 varaqli Excel hisobot strukturasi va formula inyektsiyasiga qarshi himoya.
-- Telegram FloodWait xatoliklarini to'g'ri qayta ishlash.
-- Ruxsatsiz foydalanuvchilarni rad etish.
-- Snapshotlar orqali 24 soatlik o'sish dinamikasi.
-- Tarmoq xatosidan keyin reklamani saqlash va yangilashni qayta urinish.
-- Viewer uchun yozish amallarini bloklash va admin ruxsatlarini saqlash.
-- Har bir reklama xarajati bo'yicha CPM va pauzadagi kanallarni o'tkazib yuborish.
-- Telefon/QR login, QR yangilanishi, yashirin 2FA va `.env` qiymatlarini saqlash.
+Serverda interaktiv login uchun loyiha papkasidagi `.env` faylini ulang:
 
-Testlar izolyatsiyalangan SQLite bazasi va Telegram mocklaridan foydalanadi.
-Ular haqiqiy PostgreSQL va Telegram akkaunti bilan ulanish tekshiruvini almashtirmaydi.
-
----
-
-## 📱 BOTDAN FOYDALANISH VA BUYRUQLAR
-
-Telegram botda `/` belgisi yozilishi bilanoq quyidagi buyruqlar avtomatik tavsiya etiladi:
-
-| Buyruq | Tavsif |
-| :--- | :--- |
-| `/start` | Asosiy menyuni ochish |
-| `/recent` | Oxirgi joylashtirilgan reklamalar (sahifalash bilan) |
-| `/channels` | Reklama kanallarini boshqarish va yangi kanal qo'shish |
-| `/stats_week` | Oxirgi 7 kunlik statistika xulosasi |
-| `/stats_month` | Oxirgi 30 kunlik kengaytirilgan hisobot |
-| `/stats_year` | Oxirgi 365 kunlik dinamika |
-| `/custom_range` | Foydalanuvchi tanlagan sana oralig'i bo'yicha hisobot |
-| `/excel` | Professional Excel hisobotni (.xlsx) yuklab olish |
-| `/refresh` | Ko'rishlar statistikasini majburiy yangilash |
-| `/settings` | Tizim holati, kalit so'zlar va monitoring sozlamalari |
-| `/help` | Botdan foydalanish yo'riqnomasi |
-
----
-
-## 💾 BAZANI ZAXIRALASH (BACKUP & RESTORE)
-
-### Zaxira nusxa olish (Backup):
 ```bash
-docker exec -t imkon_ads_postgres pg_dump -U postgres imkon_ads > backup_$(date +%Y%m%d).sql
+docker compose run --rm --no-deps -v "$PWD/.env:/app/.env" bot python -u scripts/telegram_login.py
+docker compose up -d --no-deps --force-recreate bot
 ```
 
-### Zaxiradan tiklash (Restore):
-```bash
-cat backup_20261021.sql | docker exec -i imkon_ads_postgres psql -U postgres -d imkon_ads
+Yangi sessiyani yuklash uchun konteynerni qayta yaratish kerak; `restart`ning
+o'zi yangi `.env` qiymatlarini yuklamaydi.
+
+## Buyruqlar
+
+| Buyruq | Amal |
+| --- | --- |
+| `/start` | Asosiy menyu |
+| `/channels` | Kanal qo'shish, ro'yxat, faollik va o'chirish |
+| `/recent` | Har kanaldagi eng oxirgi mos reklama |
+| `/stats_month` | Shu oydagi reklamalar |
+| `/custom_range` | Ikki sana oralig'idagi reklamalar |
+| `/search`, `/excel` | Davrni tanlab yangi qidiruv |
+| `/cancel` | Amalni yoki qidiruvni bekor qilish |
+| `/help` | Yo'riqnoma |
+
+## Tekshiruvlar
+
+```powershell
+python -m pytest -q
 ```
 
----
-
-## 🔒 XAVFSIZLIK VA PRIVACY
-
-- Tizim maxfiy ma'lumotlarni (`API_HASH`, `BOT_TOKEN`, `TELEGRAM_SESSION_STRING`) loglarda avtomatik filtrlaydi (`[REDACTED_SECRET]`).
-- Tashqi foydalanuvchilar botga kira olmaydi (`AuthMiddleware` bloklaydi).
-- Excel fayllaridagi ma'lumotlar CSV/Excel Formula Injection dan tozalangan holda yoziladi.
-- Telegram so'rovlari limitlarga qat'iy rioya qiladi va hisobning bloklanishiga yo'l qo'ymaydi.
+Testlar SQLite va Telegram/Bot API mocklari bilan ishlaydi. Ular kanal ID bo'yicha
+takrorlanmaslik, ko'p kanalni birdan saqlash, o'chirish va tiklash, nom/username
+o'zgarishi, sanalar chegaralari, albom va havolalar, xatolar/FloodWait, bekor qilish,
+bot menyu oqimi va Excel jadvalini tekshiradi. Eski modullar testlari ham saqlangan.
+Bu tekshiruvlar haqiqiy Telegram akkaunti, PostgreSQL yoki serverda ishlash tasdig'i emas.

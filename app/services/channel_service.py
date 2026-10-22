@@ -1,4 +1,7 @@
+import re
+from dataclasses import dataclass
 from typing import Optional, List, Dict, Any, Tuple
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.models.channel import Channel
 from app.database.repositories.channel_repo import ChannelRepository
@@ -7,8 +10,22 @@ from app.telegram_client.client import (
     telegram_client_manager,
     ChannelNotFoundError,
     ChannelAccessDeniedError,
+    TelegramFloodWaitException,
 )
 from app.core.logging import logger
+
+
+@dataclass
+class ChannelAddResult:
+    supplied: str
+    status: str
+    title: str = ""
+    telegram_id: int | None = None
+    detail: str = ""
+
+
+def split_channel_inputs(raw: str) -> list[str]:
+    return [part for part in re.split(r"[\s,;]+", raw.strip()) if part]
 
 
 class ChannelService:
@@ -35,13 +52,41 @@ class ChannelService:
             # Already exists and active
             return existing, False
 
-        channel = await self.channel_repo.create(
-            telegram_channel_id=tg_id,
-            title=info["title"],
-            username=info["username"],
-            url=info["url"],
-        )
+        try:
+            # The unique Telegram-ID constraint also protects simultaneous bulk adds.
+            async with self.session.begin_nested():
+                channel = await self.channel_repo.create(
+                    telegram_channel_id=tg_id, title=info["title"],
+                    username=info["username"], url=info["url"],
+                )
+        except IntegrityError:
+            channel = await self.channel_repo.get_by_tg_id(tg_id)
+            if channel is None:
+                raise
+            return channel, False
         return channel, True
+
+    async def add_channels(self, raw: str) -> list[ChannelAddResult]:
+        inputs = split_channel_inputs(raw)
+        results = []
+        for index, item in enumerate(inputs):
+            try:
+                async with self.session.begin_nested():
+                    channel, added = await self.add_channel(item)
+                results.append(ChannelAddResult(item, "added" if added else "duplicate",
+                                               channel.title, channel.telegram_channel_id))
+            except TelegramFloodWaitException as exc:
+                results.extend(ChannelAddResult(value, "error", detail=f"Telegram cheklovi: {exc.seconds} soniyadan keyin qayta yuboring")
+                               for value in inputs[index:])
+                break
+            except ChannelNotFoundError:
+                results.append(ChannelAddResult(item, "error", detail="Kanal topilmadi"))
+            except ChannelAccessDeniedError:
+                results.append(ChannelAddResult(item, "error", detail="Kanalga kirish huquqi yo'q"))
+            except Exception as exc:
+                logger.warning("Kanalni qo'shib bo'lmadi: %s", type(exc).__name__)
+                results.append(ChannelAddResult(item, "error", detail="Kanalni tekshirib yoki saqlab bo'lmadi"))
+        return results
 
     async def get_channel_by_id(self, channel_id: int) -> Optional[Channel]:
         return await self.channel_repo.get_by_id(channel_id)
@@ -74,8 +119,7 @@ class ChannelService:
             return {"status": "error", "message": "Kanal bazadan topilmadi"}
 
         try:
-            target = channel.username or channel.telegram_channel_id
-            info = await self.tg_client.resolve_channel(str(target))
+            info = await self.tg_client.resolve_channel(str(channel.telegram_channel_id))
             return {
                 "status": "ok",
                 "title": info["title"],
@@ -91,7 +135,7 @@ class ChannelService:
         except ChannelNotFoundError:
             return {
                 "status": "not_found",
-                "message": "Kanal Telegramda topilmadi (ehtimol o'chirilgan yoki username o'zgargan)",
+                "message": "Kanal Telegramda topilmadi yoki akkauntga ko'rinmayapti",
             }
         except Exception as e:
             return {"status": "error", "message": str(e)}
