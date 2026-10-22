@@ -213,7 +213,7 @@ async def test_late_history_failure_still_delivers_completed_posts_as_partial(mo
     async def uploaded(document):
         assert "qisman" in document.filename
         wb = load_workbook(document.path)
-        assert wb["Umumiy xulosa"]["B5"].value == "Qisman"
+        assert wb.sheetnames == ["Postlar", "Forwardlar"]
         wb.close()
 
     monkeypatch.setattr(post_range.service, "collect", interrupted)

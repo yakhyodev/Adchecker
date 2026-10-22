@@ -54,6 +54,8 @@ class RangeStore:
             CREATE TABLE destinations(id INTEGER PRIMARY KEY, title TEXT, kind TEXT, url TEXT);
             CREATE TABLE forwards(source_id INTEGER, destination_id INTEGER, message_id INTEGER,
                 published TEXT, payload TEXT, PRIMARY KEY(source_id,destination_id,message_id));
+            CREATE INDEX post_album ON posts(json_extract(source,'$.grouped_id'));
+            CREATE INDEX forward_album ON forwards(source_id,destination_id,json_extract(payload,'$.grouped_id'));
         """)
 
     def close(self):
@@ -61,6 +63,10 @@ class RangeStore:
 
     def sink(self, source_id):
         return ForwardSink(self, source_id)
+
+    def has_album(self, grouped_id):
+        return self.db.execute("SELECT 1 FROM posts WHERE json_extract(source,'$.grouped_id')=? LIMIT 1",
+                               (grouped_id,)).fetchone() is not None
 
     def save_post(self, report, day):
         self.db.execute("INSERT INTO posts(message_id,day,source,public,private,checked,complete) VALUES(?,?,?,?,?,?,?)",
@@ -84,6 +90,11 @@ class ForwardSink:
     def contains(self, destination_id, message_id):
         return self.store.db.execute("SELECT 1 FROM forwards WHERE source_id=? AND destination_id=? AND message_id=?",
                                      (self.source_id, destination_id, message_id)).fetchone() is not None
+
+    def contains_album(self, destination_id, grouped_id):
+        return self.store.db.execute("""SELECT 1 FROM forwards WHERE source_id=? AND destination_id=?
+            AND json_extract(payload,'$.grouped_id')=? LIMIT 1""",
+            (self.source_id, destination_id, grouped_id)).fetchone() is not None
 
     def save(self, row):
         self.store.db.execute("INSERT OR REPLACE INTO forwards VALUES(?,?,?,?,?)",
@@ -164,19 +175,30 @@ class PostRangeService:
                         break
                     if item.id <= cursor:
                         continue
+                    group = getattr(item, "grouped_id", None)
+                    if group and store.has_album(group):
+                        cursor = item.id
+                        continue
                     if posted and posted >= start and not isinstance(item, MessageEmpty) and not getattr(item, "action", None):
                         await progress("post", f"{day:%d.%m.%Y} · Post #{item.id}. Tayyor: {store.post_count} ta.")
                         # History pages may be buffered for a long time. Refresh the
                         # exact post when its turn arrives, including deletion checks.
-                        current = await api._optional(lambda: self.manager.client.get_messages(entity, ids=item.id), "asosiy post")
+                        album = await api.album_messages(entity, item) if group else None
+                        current = (album[-1] if album else None) if group else await api._optional(
+                            lambda: self.manager.client.get_messages(entity, ids=item.id), "asosiy post")
                         if current is None or isinstance(current, MessageEmpty):
                             source = metrics(item, entity)
                             source.views = source.reactions = source.shares = source.replies = source.members = None
                             report = PostReport(source=source, checked_at=get_utc_now(), notice="Post ma'lumoti topilmadi.")
                         else:
-                            if current.id != item.id:
+                            if not group and current.id != item.id:
                                 raise PostReportUnavailable("Telegram post ID'si mos kelmadi. Hisobot to'xtatildi.")
-                            report = await api.collect_message(entity, current, store.sink(item.id))
+                            first = album[0] if album else current
+                            first_date = first.date.replace(tzinfo=timezone.utc) if first.date.tzinfo is None else first.date
+                            if first_date < start or first_date >= upper:
+                                cursor = item.id
+                                continue
+                            report = await api.collect_message(entity, current, store.sink(first.id), album=album)
                         store.save_post(report, day)
                         del report
                     cursor = item.id

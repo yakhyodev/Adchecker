@@ -91,7 +91,7 @@ def test_range_xlsx_integrity_and_requested_columns(case, tmp_path):
         target = tmp_path / "range.xlsx"
         generate_post_range_excel(store, target, Event())
         wb = assert_package(target)
-        assert wb.sheetnames == ["Umumiy xulosa", "Postlar", "Forwardlar"]
+        assert wb.sheetnames == ["Postlar", "Forwardlar"]
         posts, forwards = wb["Postlar"], wb["Forwardlar"]
         assert [cell.value for cell in posts[1]] == SOURCE
         assert [cell.value for cell in forwards[1]] == FORWARD
@@ -107,11 +107,6 @@ def test_range_xlsx_integrity_and_requested_columns(case, tmp_path):
             assert forwards.cell(row, 5).hyperlink.target == expected.post_url
             assert forwards.cell(row, 7).value == (MISSING if expected.views is None else expected.views)
         assert not forwards.tables
-        summary = dict(wb["Umumiy xulosa"].iter_rows(min_row=2, values_only=True))
-        assert summary["Holat"] == ("Qisman" if case == "partial" else "To'liq")
-        if case == "missing":
-            assert summary["Asosiy postlarning umumiy ko'rishlari"] == MISSING
-            assert summary["Forwardlarning umumiy ko'rishlari"] == MISSING
         assert all(cell.data_type != "f" for ws in wb for row in ws for cell in row)
         wb.close()
     finally:

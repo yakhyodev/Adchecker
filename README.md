@@ -169,7 +169,7 @@ hisobot qilib yetkaziladi; tugamagan tekshiruv to'liq natija deb ko'rsatilmaydi.
 Bu doimiy fon monitoringi yoki kunlik tarixiy ko'rishlar yig'ish emas: tanlangan
 sanada **chiqarilgan postlarning hisobot so'ralgan paytdagi statistikasi** olinadi.
 
-Excel uchta ixcham varaqdan iborat: **Umumiy xulosa**, **Postlar**, **Forwardlar**.
+Excel ikkita ixcham varaqdan iborat: **Postlar**, **Forwardlar**.
 Har post va har forward alohida qatorda yoziladi. Postlar sana-vaqt bo'yicha
 tartiblanadi; **№** oddiy tartib raqami bo'lib, Forwardlar'dagi **Asosiy post №**
 bilan mos keladi. Forwardlar asosiy post, keyin chiqarilgan vaqt bo'yicha saralanadi;
@@ -177,8 +177,15 @@ teng vaqtlarda raqamli kanal/guruh ID'si barqaror tartibni ta'minlaydi.
 Telegram ID, reaksiyalar va izohlar bu formatda ko'rsatilmaydi; alohida Kanallar
 varag'i yo'q. Havolalar bosiladi. Bir kundagi postlar bir rangda, keyingi kalendar
 kuni boshqa rangda (och ko'k / oq) chiqadi. Forward ranglari asosiy post kuniga mos.
-Xulosa mavjud hisoblagichlarni jamlaydi; yetishmagan hisoblagich nolga almashtirilmaydi.
-Yig'ish qisman bo'lsa, xulosa va fayl nomida belgilangan bo'ladi.
+Yetishmagan hisoblagich nolga almashtirilmaydi. Yig'ish qisman bo'lsa, bot xabari
+va fayl nomida belgilangan bo'ladi. Umumiy xulosa varag'i chiqarilmaydi.
+Telegram'da bir xil **grouped_id** bilan kelgan foto/video albomi bitta post
+hisoblanadi. Birinchi mavjud media havolasi saqlanadi; hisoblagichlar Telegram
+albom sahifasida ko'rsatiladigan oxirgi mavjud media ma'lumotidan olinadi.
+Media ko'rishlari va ulashishlari bir-biriga qo'shilmaydi, maksimum ham olinmaydi.
+Public/private shares shu ko'rsatiladigan media uchun Telegram bergan statistikadir.
+Forward albomlari ham kanal/guruh ID va grouped_id bo'yicha bitta qatorga tushadi;
+bir vaqtda chiqqan, grouped_id'siz mustaqil postlar birlashtirilmaydi.
 Har faylda ko'pi bilan 20 000 post va 20 000 forward bo'ladi: Excel havola chegarasi
 va hyperlink obyektlarining RAM sarfi cheklanadi. Katta fayllar yana bo'linadi;
 har qismda forwardlarga tegishli asosiy postlar global tartib raqami bilan saqlanadi.

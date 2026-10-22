@@ -97,6 +97,7 @@ class PostMetrics:
     replies: int | None
     telegram_id: int | None = None
     message_id: int | None = None
+    grouped_id: int | None = None
 
 
 def metrics(message, chat, members=None) -> PostMetrics:
@@ -125,7 +126,22 @@ def metrics(message, chat, members=None) -> PostMetrics:
         replies=count(getattr(getattr(message, "replies", None), "replies", None)),
         telegram_id=utils.get_peer_id(peer) if isinstance(peer, (PeerChannel, PeerChat)) else None,
         message_id=getattr(message, "id", None),
+        grouped_id=getattr(message, "grouped_id", None),
     )
+
+
+def album_metrics(messages, chat):
+    """Keep the first link and Telegram's displayed (last media) counters.
+
+    Media counters describe overlapping exposures; neither sums nor maxima are
+    an album view count. Telegram's public album embed displays the last item.
+    """
+    first, last = messages[0], messages[-1]
+    result = metrics(last, chat)
+    first_metrics = metrics(first, chat)
+    result.message_id, result.post_url = first.id, first_metrics.post_url
+    result.published_at = first_metrics.published_at
+    return result
 
 
 @dataclass
@@ -209,10 +225,34 @@ class PostReportService:
             raise PostReportUnavailable(f"{MISSING}: post mavjudligi va akkaunt kirish huquqini tekshiring.")
         return await self.collect_message(entity, message)
 
-    async def collect_message(self, entity, message, sink=None) -> PostReport:
+    async def album_messages(self, entity, message):
+        """Resolve only the neighboring IDs of an album (maximum 10 media).
+
+        No channel-history scan or time-based grouping: only equal grouped_id
+        values in the same peer may form an album.
+        """
+        group = getattr(message, "grouped_id", None)
+        if not group:
+            return [message]
+        identifiers = list(range(max(1, message.id - 9), min(2**31, message.id + 10)))
+        items = await self._optional(lambda: self.manager.client.get_messages(entity, ids=identifiers), "albom medialari")
+        if items is None:
+            return None
+        peer = getattr(message, "peer_id", None)
+        result = sorted((item for item in items if not isinstance(item, MessageEmpty)
+            and getattr(item, "grouped_id", None) == group
+            and getattr(item, "peer_id", None) == peer), key=lambda item: item.id)
+        return result or None
+
+    async def collect_message(self, entity, message, sink=None, *, album=None) -> PostReport:
         """Trusted source history can stream one post's forwards directly to disk."""
         client = self.manager.client
-        source = metrics(message, entity)
+        album = album if album is not None else await self.album_messages(entity, message)
+        if not album:
+            source = metrics(message, entity)
+            source.views = source.shares = source.reactions = source.replies = None
+            return PostReport(source=source, checked_at=get_utc_now(), notice="Albom ma'lumotlari topilmadi.")
+        source = album_metrics(album, entity)
         report = PostReport(source=source, checked_at=get_utc_now())
         try:
             full = await self._optional(lambda: client(GetFullChannelRequest(entity)), "kanal ma'lumotlari")
@@ -220,7 +260,7 @@ class PostReportService:
             members = count(getattr(full_chat, "participants_count", None))
             if members is not None:
                 source.members = members
-            await self._collect_forwards(report, entity, message.id, getattr(full_chat, "stats_dc", None), sink)
+            await self._collect_forwards(report, entity, album[-1].id, getattr(full_chat, "stats_dc", None), sink)
         except PostReportUnavailable as exc:
             # Preserve Telegram data already obtained when enrichment or a later
             # page hits a rate limit, timeout or transient server failure.
@@ -240,6 +280,7 @@ class PostReportService:
         offset = ""
         offsets = set()
         seen = set()
+        seen_groups = set()
         chats = {}
         member_counts = {}
         while True:
@@ -263,6 +304,9 @@ class PostReportService:
                 if not isinstance(peer, (PeerChannel, PeerChat)) or isinstance(forwarded, MessageEmpty):
                     continue
                 peer_id = utils.get_peer_id(peer)
+                group = getattr(forwarded, "grouped_id", None)
+                if group and (sink.contains_album(peer_id, group) if sink is not None else (peer_id, group) in seen_groups):
+                    continue
                 key = (peer_id, forwarded.id)
                 if (sink.contains(*key) if sink is not None else key in seen):
                     continue
@@ -273,7 +317,15 @@ class PostReportService:
                     chat = await self._optional(lambda: client.get_entity(peer), "forward kanali/guruhi")
                 if chat is not None and not isinstance(chat, (Channel, Chat)):
                     continue
-                row = metrics(forwarded, chat)
+                album = await self.album_messages(chat, forwarded) if chat is not None else None
+                if album:
+                    row = album_metrics(album, chat)
+                else:
+                    row = metrics(forwarded, chat)
+                    if group:
+                        row.views = row.shares = row.reactions = row.replies = None
+                if group and sink is None:
+                    seen_groups.add((peer_id, group))
                 if sink is None:
                     report.forwards.append(row)
                 else:
@@ -282,7 +334,7 @@ class PostReportService:
                 # The stats response can carry only basic counters. Read that exact
                 # destination post if richer public counters were omitted; no history search.
                 counters = ("views", "reactions", "shares", "replies")
-                if chat is not None and any(getattr(row, name) is None for name in counters):
+                if not group and chat is not None and any(getattr(row, name) is None for name in counters):
                     current = await self._optional(lambda: client.get_messages(chat, ids=forwarded.id), "forward post statistikasi")
                     if current is not None and not isinstance(current, MessageEmpty):
                         refreshed = metrics(current, chat)

@@ -161,7 +161,7 @@ async def test_rows_source_number_links_day_colors_and_multiple_forwards(store, 
     path = tmp_path / "range.xlsx"
     generate_post_range_excel(store, path, Event())
     wb = load_workbook(path)
-    assert wb.sheetnames == ["Umumiy xulosa", "Postlar", "Forwardlar"]
+    assert wb.sheetnames == ["Postlar", "Forwardlar"]
     source, forwards = wb["Postlar"], wb["Forwardlar"]
     assert [source.cell(row, 1).value for row in (2, 3)] == [1, 2]
     assert [forwards.cell(row, 2).value for row in range(2, 6)] == [1, 1, 1, 2]
@@ -185,7 +185,7 @@ async def test_source_numbers_remain_global_in_sliced_workbook(store, tmp_path):
     path = tmp_path / "split.xlsx"
     generate_post_range_excel(store, path, Event(), post_offset=1, post_limit=2)
     wb = load_workbook(path)
-    assert len(wb.worksheets) == 3
+    assert len(wb.worksheets) == 2
     assert [wb["Postlar"].cell(row, 1).value for row in (2, 3)] == [2, 3]
     assert wb["Postlar"]["C3"].value.endswith("/12")
 

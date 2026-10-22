@@ -12,7 +12,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet._writer import WorksheetWriter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from app.core.timezone import get_tashkent_now, to_tashkent
+from app.core.timezone import to_tashkent
 from app.reports.post_excel import _safe
 from app.reports.xlsx_validation import validate_xlsx
 from app.services.post_range import decode
@@ -116,54 +116,6 @@ def _sheet(wb, title, headers, widths, path, *, detail=True):
     return ws
 
 
-def _summary(store, stop):
-    count, total, best, latest = 0, 0, None, None
-    all_known = True
-    for row in post_rows(store):
-        if stop.is_set():
-            raise RangeExportCancelled()
-        post = decode(row[3])
-        count += 1
-        all_known &= post.views is not None
-        total += post.views or 0
-        if post.views is not None and (best is None or post.views > best[0]):
-            best = post.views, count, post.post_url
-        checked = datetime.fromisoformat(row[6])
-        latest = checked if latest is None or checked > latest else latest
-    nforwards, views, known, best_channel = 0, 0, True, None
-    for title, amount, observed, n in store.db.execute("""SELECT d.title,
-            SUM(json_extract(f.payload,'$.views')),COUNT(json_extract(f.payload,'$.views')),COUNT(*)
-            FROM forwards f JOIN destinations d ON d.id=f.destination_id
-            GROUP BY d.id ORDER BY SUM(json_extract(f.payload,'$.views')) DESC,d.id"""):
-        if stop.is_set():
-            raise RangeExportCancelled()
-        nforwards += n
-        views += amount or 0
-        known &= observed == n
-        if best_channel is None and observed == n:
-            best_channel = title
-    if not known:
-        best_channel = None  # Missing counters can change the ranking.
-    days = store.db.execute("SELECT MIN(day),MAX(day) FROM posts").fetchone()
-    selected = getattr(store, "selected_range", None)
-    start, end = (selected.start, selected.end) if selected else days
-    empty_complete = not nforwards and not store.partial_count and store.collection_complete
-    return [
-        ("Hisobot davri", f"{start} — {end}"),
-        ("Yaratilgan vaqt (Toshkent)", get_tashkent_now().replace(tzinfo=None)),
-        ("Statistika olingan vaqt (Toshkent)", _local(latest)),
-        ("Holat", "Qisman" if store.partial_count or not store.collection_complete else "To'liq"),
-        ("Asosiy postlar soni", count),
-        ("Asosiy postlarning umumiy ko'rishlari", total if count and all_known else None),
-        ("Aniqlangan forwardlar soni", nforwards),
-        ("Forwardlarning umumiy ko'rishlari", views if nforwards and known else 0 if empty_complete else None),
-        ("Forward qilingan kanal va guruhlar soni", store.db.execute("SELECT COUNT(DISTINCT destination_id) FROM forwards").fetchone()[0]),
-        ("Eng ko'p ko'rilgan asosiy post №", best[1] if best and all_known else None),
-        ("Eng ko'p ko'rilgan asosiy post", best[2] if best and all_known else None),
-        ("Eng ko'p forward ko'rishlari to'plagan kanal", best_channel),
-    ]
-
-
 def generate_post_range_excel(store, path, stop: Event, *, post_offset=0, post_limit=-1,
                              forward_offset=0, forward_limit=-1):
     """One row per record. Native links and rows are bounded per workbook."""
@@ -173,12 +125,6 @@ def generate_post_range_excel(store, path, stop: Event, *, post_offset=0, post_l
         raise ValueError("Excel faylini qatorlar bo'yicha qismlarga ajrating.")
     wb = Workbook(write_only=True)
     try:
-        summary = _sheet(wb, "Umumiy xulosa", ["IMKON postlar hisoboti", "Qiymat"], [49, 65], path, detail=False)
-        for label, value in _summary(store, stop):
-            summary.append(_cells(summary, [label, value]))
-        if count != store.post_count or nforwards != forward_count(store):
-            for label, value in (("Fayldagi postlar soni", count), ("Fayldagi forwardlar soni", nforwards)):
-                summary.append(_cells(summary, [label, value]))
         posts = _sheet(wb, "Postlar", SOURCE, [8, 25, 49, 23, 23, 23, 23], path)
         first_day = store.db.execute("SELECT MIN(day) FROM posts").fetchone()[0]
         first_day = date.fromisoformat(first_day) if first_day else date(2000, 1, 1)
