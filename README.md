@@ -135,6 +135,50 @@ haqiqiy tarmoq/server muammolari bundan alohida ko'rsatiladi.
 Hisobot bazaga yozilmaydi, fon monitoringi yoki obunachilarni mustaqil kuzatish
 qo'shilmagan. `/cancel`, `/start` va bosh menyu davom etayotgan so'rovni to'xtatadi.
 
+## Sana oralig'idagi barcha postlar
+
+**🗓 Postlar hisoboti** yoki `/posts_range` orqali boshlanish va tugash sanalarini
+`YYYY-MM-DD` formatida kiriting. Ikkala kun ham Toshkent vaqti bilan hisobga olinadi.
+Asosiy kanal o'sha **imkonsavdomarkazi**; yangi environment sozlamasi kerak emas.
+Botning kanalga admin bo'lishi talab qilinmaydi. Mavjud Telethon akkaunti sessiyasi
+ishlatiladi; batafsil statistika uchun shu akkaunt kanalga admin bo'lishi kerak.
+API ID va API hashning o'zi akkauntga kirilgan sessiya o'rnini bosmaydi.
+
+Har kunning postlari eskidan yangiga, **bittadan** tekshiriladi. Bir postning barcha
+public forward sahifalari va mavjud statistikasi tugagach keyingi post boshlanadi.
+Bu rejim va bitta post hisoboti umumiy bitta navbatdan foydalanadi. Har so'rov oldidan
+qisqa tanaffus bor. FloodWait paytida Telegram ko'rsatgan vaqt kutiladi va o'sha so'rov
+qayta bajariladi; vaqtinchalik tarmoq/server muammolari ham kutib qayta tekshiriladi.
+Tarix sahifasi uzilsa oxirgi tugallangan post ID'sidan davom etadi. Kutishda ham
+`/cancel`, `/start` yoki bosh menyu bilan to'xtatish mumkin.
+Har post navbati kelganda aynan o'sha ID bo'yicha qayta ochilib, statistikasi
+yangilanadi: tarix sahifasidagi eskirgan ko'rishlar tayyor natija sifatida olinmaydi.
+Orada o'chirilgan postning mavjud havola/sanasi saqlanadi, hisoblagichlari esa
+**Ma'lumot topilmadi** deb belgilanadi va keyingi postga o'tiladi.
+
+Natijalar faqat shu so'rov uchun `data/post_reports` ichidagi vaqtinchalik SQLite
+fayliga yoziladi. Public forwardlar ham sahifalab diskka tushadi; bir oylik barcha
+natijalar RAM'da yig'ilmaydi. Excel write-only rejimida diskka yaratiladi va fayldan
+bo'laklab yuboriladi. Tugaganda yoki bekor qilinganda vaqtinchalik fayllar o'chiriladi.
+Excel'ning yordamchi XML fayllari ham shu ishning disk papkasida yaratiladi va
+tozalanadi. Telegram fayl hajmi yoki Excel qator chegarasidan oshsa, natija mavjud
+disk buferidan avtomatik qismlarga bo'linadi; postlar qayta so'ralmaydi. Faylni
+yuborishdagi vaqtinchalik tarmoq/server xatolari va 429 limitlari kutib qayta uriniladi.
+Tarixni o'qish keyinroq butunlay imkonsiz bo'lib qolsa, tugallangan postlar qisman
+hisobot qilib yetkaziladi; tugamagan tekshiruv to'liq natija deb ko'rsatilmaydi.
+Bu doimiy fon monitoringi yoki kunlik tarixiy ko'rishlar yig'ish emas: tanlangan
+sanada **chiqarilgan postlarning hisobot so'ralgan paytdagi statistikasi** olinadi.
+
+Excel'da faqat jadvallar bor: **Asosiy postlar** va **Public forwardlar**.
+Sanalar va har bir manba post ID'si ketma-ket alohida ustun bloklarida beriladi.
+Bir kunda bir nechta post yoki bir kanalga bir postning bir nechta forwardi bo'lsa,
+ular alohida bloklarda saqlanadi. Qatorlar kanal/guruh nomi yoki username bo'yicha
+emas, **raqamli Telegram ID ortib borishi** bo'yicha tartiblanadi; nom o'zgarsa ham ID
+bitta qator bo'lib qoladi. Ustunlar Excel chegarasidan oshsa davom varaqlari yaratiladi.
+URL'lar xotira sarfini oshiradigan alohida hyperlink obyektlarisiz, matn qilib yoziladi.
+Storislar chiqarilmaydi; Private Shares faqat Telegram jami hisoblagichlaridan olinadi.
+Topilmagan qiymatlar **Ma'lumot topilmadi**, haqiqiy nol `0` qilib yoziladi.
+
 ## Ishga tushirish
 
 Python 3.12+, PostgreSQL va Telegram akkaunti sessiyasi kerak.
@@ -193,6 +237,7 @@ o'zi yangi `.env` qiymatlarini yuklamaydi.
 | `/custom_range` | Ikki sana oralig'idagi reklamalar |
 | `/search`, `/excel` | Davrni tanlab yangi qidiruv |
 | `/post` | Post havolasi bo'yicha statistika va public forwardlar |
+| `/posts_range` | Sana oralig'idagi barcha postlarni ketma-ket olish |
 | `/cancel` | Amalni yoki qidiruvni bekor qilish |
 | `/help` | Yo'riqnoma |
 

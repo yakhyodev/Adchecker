@@ -14,6 +14,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio
+async def test_retryable_authorization_probe_does_not_hide_floodwait():
+    manager = TelegramClientManager(api_id=123, api_hash="0123456789abcdef0123456789abcdef")
+    manager.client = AsyncMock(side_effect=FloodWaitError(None, capture=10))
+    manager.client.is_connected = MagicMock(return_value=True)
+    with pytest.raises(FloodWaitError):
+        await manager.probe_authorization()
+
+
+@pytest.mark.asyncio
+async def test_authorization_probe_reconnects_before_checking_state():
+    manager = TelegramClientManager(api_id=123, api_hash="0123456789abcdef0123456789abcdef")
+    manager.client = AsyncMock(return_value=object())
+    manager.client.is_connected = MagicMock(return_value=False)
+    assert await manager.probe_authorization()
+    manager.client.connect.assert_awaited_once()
+    assert manager._is_started
+    assert manager.client._authorized is True
+
+
+@pytest.mark.asyncio
 async def test_resolve_channel_success():
     client_mgr = TelegramClientManager(api_id=123, api_hash="0123456789abcdef0123456789abcdef")
     client_mgr._is_started = True

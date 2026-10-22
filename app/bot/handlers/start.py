@@ -37,6 +37,7 @@ async def handle_help(message: Message) -> None:
         "🔹 <b>📊 Excel:</b> Kanallar qatorlarda, sanalar bo'yicha reklama havolasi, ko'rilish va ulashishlar.\n"
         "🔹 <b>📢 Kanallar:</b> Bir xabarda ko'p kanal qo'shish, ro'yxat va o'chirish.\n"
         "🔹 <b>📋 Post hisoboti:</b> /post yoki post havolasi orqali Telegram statistikasi va public forwardlar Excel jadvali.\n"
+        "🔹 <b>🗓 Postlar hisoboti:</b> /posts_range — sanalarni tanlab, barcha postlarni eskidan yangiga ketma-ket olish.\n"
         "🔹 Qidiruvni to'xtatish: /cancel.\n\n"
         "Sanalar Toshkent vaqti bo'yicha, boshlanish va tugash kunlari ham qo'shiladi. "
         "Topilmagan reklamalar qizil, tugamagan tekshiruvlar sariq belgilanadi."

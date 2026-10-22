@@ -9,10 +9,12 @@ from telethon.errors import (
     UsernameNotOccupiedError,
     UsernameInvalidError,
     ChannelInvalidError,
+    UnauthorizedError,
 )
 from telethon.tl.types import Channel as TelethonChannel, Message, MessageEmpty
 from telethon.tl.types import ChatInviteAlready
 from telethon.tl.functions.messages import CheckChatInviteRequest
+from telethon.tl.functions.updates import GetStateRequest
 
 from app.core.config import settings
 from app.core.logging import logger
@@ -112,6 +114,19 @@ class TelegramClientManager:
         except Exception as e:
             logger.error(f"Avtorizatsiyani tekshirishda xatolik: {e}")
             return False
+
+    async def probe_authorization(self) -> bool:
+        """Probe without hiding temporary RPC failures inside a cached False."""
+        if not self.client.is_connected():
+            await self.client.connect()
+        self._is_started = True
+        try:
+            authorized = await self.client(GetStateRequest()) is not None
+        except UnauthorizedError:
+            self.client._authorized = False
+            return False
+        self.client._authorized = authorized
+        return authorized
 
     async def resolve_channel(self, raw_input: str) -> Dict[str, Any]:
         """Resolves channel info and validates access.

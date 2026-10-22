@@ -43,7 +43,7 @@ class CaptureSession(BaseSession):
 
 
 @pytest.mark.asyncio
-async def test_dispatcher_start_period_keyword_report_and_bulk_channel_navigation(monkeypatch):
+async def test_dispatcher_start_period_keyword_report_and_bulk_channel_navigation(monkeypatch, tmp_path):
     # Use the actual router order and FSM filters, without Bot API or MTProto traffic.
     dp = Dispatcher()
     dp.include_router(get_main_router())
@@ -127,6 +127,37 @@ async def test_dispatcher_start_period_keyword_report_and_bulk_channel_navigatio
         await send("📋 Post hisoboti", 21)
         await send("/cancel", 22)
         assert await state.get_state() is None
+        from app.bot.handlers import post_range
+        monkeypatch.setattr(post_range, "WORK_ROOT", tmp_path / "spool")
+        monkeypatch.setattr(post_range, "get_tashkent_now", lambda: datetime(2026, 10, 22, 12, tzinfo=TASHKENT_TZ))
+
+        async def collect_range(selected, store, progress):
+            assert selected.start.isoformat() == selected.end.isoformat() == "2026-10-21"
+            store.save_post(post_result, selected.start)
+        ranged = AsyncMock(side_effect=collect_range)
+        monkeypatch.setattr(post_range.service, "collect", ranged)
+        await send("🆕 Oxirgi reklamalar", 23)
+        await send("🗓 Postlar hisoboti", 24)
+        assert await state.get_state() == post_range.PostRangeState.start.state
+        await send("bad date", 25)
+        assert await state.get_state() == post_range.PostRangeState.start.state
+        await send("2026-10-21", 26)
+        assert await state.get_state() == post_range.PostRangeState.end.state
+        await send("2026-10-20", 27)
+        assert await state.get_state() == post_range.PostRangeState.end.state
+        await send("2026-10-21", 28)
+        ranged.assert_awaited_once()
+        assert await state.get_state() is None
+        assert any(isinstance(call, SendDocument) and call.document.filename == "Postlar_2026-10-21_2026-10-21.xlsx"
+                   for call in session.calls)
+        assert not list((tmp_path / "spool").iterdir())
+        await send("/posts_range", 29)
+        await send("📋 Post hisoboti", 30)
+        assert await state.get_state() == post_report.PostReportState.link.state
+        await send("🗓 Postlar hisoboti", 31)
+        await send("🗓 Shu oy", 32)
+        assert await state.get_state() == search.SearchState.keywords.state
+        await send("/cancel", 33)
         # Post reports have not queried or changed the saved-channel search service.
         assert search_fn.await_count == 1 and load.await_count == 1
     finally:
